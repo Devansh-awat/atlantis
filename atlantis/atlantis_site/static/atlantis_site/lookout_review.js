@@ -772,7 +772,7 @@
         }
         if (at <= rec.pendingCut) {
             if (window.rvToast) {
-                window.rvToast('That range would end before it starts — scrub forward first.', 'bad');
+                window.rvToast('That range would end before it starts. Scrub forward first.', 'bad');
             }
             return;
         }

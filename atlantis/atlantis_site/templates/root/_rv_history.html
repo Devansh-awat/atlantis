@@ -12,7 +12,7 @@
                 {% endfor %}
                 {{ review_history|length }} entr{{ review_history|length|pluralize:"y,ies" }}
             {% else %}
-                nothing yet &mdash; first time through
+                nothing yet, first time through
             {% endif %}
         </span>
         <span class="rv-card-key"></span>
@@ -21,7 +21,7 @@
         <form action="{% url 'add_internal_comment' ship.id %}" method="POST" class="rv-comment-form">
             {% csrf_token %}
             <textarea name="text" rows="2" maxlength="1000" required
-                      placeholder="Reviewer note &mdash; internal, takes no review action"></textarea>
+                      placeholder="Reviewer note: internal, takes no review action"></textarea>
             <button type="submit" class="rv-btn">Add note</button>
         </form>
 
@@ -52,11 +52,11 @@
                     {% elif event.type == "t1" %}
                         <div class="rv-history-field-block">
                             <p class="rv-history-field">Feedback</p>
-                            <p>{{ event.review.feedback|default:"—" }}</p>
+                            <p>{{ event.review.feedback|default:"none" }}</p>
                         </div>
                         <div class="rv-history-field-block">
                             <p class="rv-history-field">Internal reason</p>
-                            <p class="is-quiet">{{ event.review.internal_notes|default:"—" }}</p>
+                            <p class="is-quiet">{{ event.review.internal_notes|default:"none" }}</p>
                         </div>
                     {% elif event.type == "t2" %}
                         {% if event.review.deductions %}
@@ -64,11 +64,11 @@
                         {% endif %}
                         <div class="rv-history-field-block">
                             <p class="rv-history-field">Feedback</p>
-                            <p>{{ event.review.feedback|default:"—" }}</p>
+                            <p>{{ event.review.feedback|default:"none" }}</p>
                         </div>
                         <div class="rv-history-field-block">
                             <p class="rv-history-field">Justification</p>
-                            <p class="is-quiet">{{ event.review.justification|default:"—" }}</p>
+                            <p class="is-quiet">{{ event.review.justification|default:"none" }}</p>
                         </div>
                     {% endif %}
                 </li>

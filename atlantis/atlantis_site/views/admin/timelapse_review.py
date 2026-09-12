@@ -223,7 +223,7 @@ def _parse_descriptions(request, lapses):
             if not value:
                 raise RemovalError(
                     "Every recording needs a description before the pass can be "
-                    f'approved — one on "{lapse.title}" doesn\'t have one yet.'
+                    f'approved. The one on "{lapse.title}" doesn\'t have one yet.'
                 )
             if len(value) > DESCRIPTION_MAX_LENGTH:
                 raise RemovalError(

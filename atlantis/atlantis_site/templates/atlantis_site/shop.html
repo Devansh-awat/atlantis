@@ -168,7 +168,7 @@
             function recalc() {
                 const qty = parseInt(qtyEl.value, 10);
                 if (!Number.isInteger(qty) || qty < 1) {
-                    totalEl.textContent = "—";
+                    totalEl.textContent = "0";
                     afterEl.textContent = "";
                     warnEl.hidden = true;
                     submitBtn.disabled = true;

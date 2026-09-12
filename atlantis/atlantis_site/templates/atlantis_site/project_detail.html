@@ -108,7 +108,7 @@
                     <div class="page-ships">
                         {% for ship in ships|slice:":1" %}
                             <p class="ship-line">
-                                shipped {{ ship.created_at|date:"M j" }} &mdash;
+                                shipped {{ ship.created_at|date:"M j" }} &middot;
                                 <span class="ship-status">{{ ship.get_status_display|lower }}</span>
                             </p>
                             {% if forloop.first and ship.latest_feedback %}
@@ -205,7 +205,7 @@
                                             </button>
                                             {% if lookout_status %}
                                                 {% if lookout_status.url %}
-                                                    <a class="chip chip--busy" href="{{ lookout_status.url }}" data-record title="a Lookout recording is still going &mdash; pick it back up">{{ lookout_status.label }}&hellip;</a>
+                                                    <a class="chip chip--busy" href="{{ lookout_status.url }}" data-record title="a Lookout recording is still going; pick it back up">{{ lookout_status.label }}&hellip;</a>
                                                 {% else %}
                                                     <span class="chip chip--dead" title="this Lookout couldn't be turned into a video">{{ lookout_status.label }}</span>
                                                 {% endif %}
@@ -243,7 +243,7 @@
                             {% endif %}
                         {% empty %}
                             {% if project.locked %}
-                                <p class="page-empty">this project is locked &mdash; nothing more goes in it.</p>
+                                <p class="page-empty">this project is locked; nothing more goes in it.</p>
                             {% else %}
                                 <p class="page-empty">nothing written in here yet.</p>
                             {% endif %}

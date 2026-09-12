@@ -70,7 +70,7 @@
     {% if claim_conflict %}
         <div class="rv-banner rv-banner-warn">
             <strong>{{ claim_conflict.name }}</strong> has this open right now. Two passes can't
-            both land — whoever submits first wins.
+            both land. Whoever submits first wins.
             <a href="{{ skip_url }}">Skip to the next one instead &rarr;</a>
         </div>
     {% endif %}
@@ -118,7 +118,7 @@
                 <h2 id="ta-final-title">Sign off {{ lapse_count }} {{ lapse_count|pluralize:"entry,entries" }}</h2>
                 <p class="ta-final-note">
                     Approving clears every waiting lapse on this project for T1. Nothing is
-                    sent to @{{ owner.name }} &mdash; not that it happened, not what it cost.
+                    sent to @{{ owner.name }}: not that it happened, not what it cost.
                 </p>
 
                 <dl class="ta-ledger">
@@ -158,11 +158,11 @@
 <dialog class="rv-shortcuts" id="rv-shortcuts">
     <h2>Keyboard shortcuts</h2>
     <dl>
-        <dt><kbd>E</kbd></dt><dd>End session &mdash; back to the timelapse desk</dd>
+        <dt><kbd>E</kbd></dt><dd>End session: back to the timelapse desk</dd>
         {% if pending %}
-            <dt><kbd>S</kbd></dt><dd>Skip &mdash; open the next project without deciding</dd>
+            <dt><kbd>S</kbd></dt><dd>Skip: open the next project without deciding</dd>
             <dt><kbd>&#8679;</kbd>&thinsp;<kbd>&crarr;</kbd></dt><dd>Save this entry&rsquo;s recordings and scroll to the next</dd>
-            <dt><kbd>&#8984;</kbd>&thinsp;<kbd>&crarr;</kbd></dt><dd>Open the sign-off panel &mdash; and, from inside it, submit</dd>
+            <dt><kbd>&#8984;</kbd>&thinsp;<kbd>&crarr;</kbd></dt><dd>Open the sign-off panel; from inside it, submit</dd>
             <dt><kbd>I</kbd></dt><dd>Open the sign-off panel and write the notes on the pass</dd>
         {% endif %}
         <dt><kbd>U</kbd></dt><dd>Open the owner&rsquo;s profile</dd>

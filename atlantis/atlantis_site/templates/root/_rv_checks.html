@@ -19,7 +19,7 @@
                         <li class="rv-check rv-check-{{ check.state }}">
                             <span class="rv-check-mark" aria-hidden="true"></span>
                             <span class="rv-check-label">{{ check.label }}</span>
-                            {% if check.note %}<span class="rv-check-note">&mdash; {{ check.note }}</span>{% endif %}
+                            {% if check.note %}<span class="rv-check-note">({{ check.note }})</span>{% endif %}
                         </li>
                     {% endif %}
                 {% endfor %}
@@ -37,7 +37,7 @@
                             <li class="rv-check rv-check-pass">
                                 <span class="rv-check-mark" aria-hidden="true"></span>
                                 <span class="rv-check-label">{{ check.label }}</span>
-                                {% if check.note %}<span class="rv-check-note">&mdash; {{ check.note }}</span>{% endif %}
+                                {% if check.note %}<span class="rv-check-note">({{ check.note }})</span>{% endif %}
                             </li>
                         {% endif %}
                     {% endfor %}

@@ -49,7 +49,7 @@
     {% if claim_conflict %}
         <div class="rv-banner rv-banner-warn">
             <strong>{{ claim_conflict.name }}</strong> has this open right now. Two decisions can't
-            both land — whoever submits first wins and the other is turned away.
+            both land. Whoever submits first wins and the other is turned away.
             <a href="{{ skip_url }}">Skip to the next one instead →</a>
         </div>
     {% endif %}
@@ -77,8 +77,8 @@
     <h2>Keyboard shortcuts</h2>
     <dl>
         {% block shortcut_rows %}{% endblock %}
-        <dt><kbd>S</kbd></dt><dd>{% if claim_held %}Skip &mdash; open the next one without deciding{% else %}Skip (nothing claimed here){% endif %}</dd>
-        <dt><kbd>E</kbd></dt><dd>End session &mdash; back to the {{ queue_label|lower }} desk</dd>
+        <dt><kbd>S</kbd></dt><dd>{% if claim_held %}Skip: open the next one without deciding{% else %}Skip (nothing claimed here){% endif %}</dd>
+        <dt><kbd>E</kbd></dt><dd>End session: back to the {{ queue_label|lower }} desk</dd>
         <dt><kbd>N</kbd></dt><dd>Toggle the history and reviewer notes</dd>
         <dt><kbd>1</kbd>&hellip;<kbd>9</kbd></dt><dd>Toggle the numbered cards</dd>
         <dt><kbd>?</kbd></dt><dd>This list</dd>

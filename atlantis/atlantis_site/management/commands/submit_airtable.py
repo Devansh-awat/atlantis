@@ -92,6 +92,6 @@ class Command(BaseCommand):
 				self.style.WARNING(
 					f"ship {submission.ship_id} "
 					f"({submission.ship.project.title}) is unresolved and was "
-					f"skipped — check Airtable by hand: {submission.error}"
+					f"skipped. Check Airtable by hand: {submission.error}"
 				)
 			)

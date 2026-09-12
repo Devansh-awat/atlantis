@@ -398,7 +398,7 @@ def queue_stats(queue_key, rows, user=None, extra=()):
         *extra,
         {
             "label": "Oldest",
-            "value": oldest.age_display if oldest else "—",
+            "value": oldest.age_display if oldest else "n/a",
             "phrase": f"oldest, against a {queue.sla_days}d SLA",
             "tone": "bad" if oldest and oldest.age_bucket == "overdue" else "",
         },

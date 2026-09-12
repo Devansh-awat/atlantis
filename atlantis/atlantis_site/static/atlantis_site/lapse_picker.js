@@ -273,7 +273,7 @@
 				render(items);
 				if (!items.length) {
 					setStatus(
-						"Nothing published yet — record one on lapse.hackclub.com, then hit refresh.",
+						"Nothing published yet. Record one on lapse.hackclub.com, then hit refresh.",
 						"quiet"
 					);
 				} else {

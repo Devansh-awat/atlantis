@@ -146,7 +146,7 @@ def _ineligible_message(status, eligible):
     if status == VERIFICATION_PENDING:
         return (
             "Hack Club is still reviewing your identity. You can create projects "
-            f"and ship once it's approved — track it at {HCA_VERIFY_STATUS_URL}"
+            f"and ship once it's approved. Track it at {HCA_VERIFY_STATUS_URL}"
         )
     if status == VERIFICATION_INELIGIBLE:
         return (

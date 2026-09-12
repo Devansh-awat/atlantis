@@ -130,7 +130,7 @@
         var field = document.querySelector(selector);
         if (!field || field.value.trim()) return false;
         field.focus();
-        toast('Write the feedback first — it goes to the shipper.', 'bad');
+        toast('Write the feedback first. It goes to the shipper.', 'bad');
         return true;
     }
 
@@ -414,7 +414,7 @@
             }).then(function () {
                 if (failures >= 3) {
                     clearInterval(timer);
-                    toast('Lost contact with the server — your claim on this review may have lapsed.', 'bad');
+                    toast('Lost contact with the server. Your claim on this review may have lapsed.', 'bad');
                 }
             });
         }, seconds * 1000);

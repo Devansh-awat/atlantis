@@ -656,7 +656,7 @@ class SubmitAirtableCommandTests(BaseTestCase):
 
 		create.assert_not_called()
 		self.assertIn("Nothing to submit.", out)
-		self.assertIn("check Airtable by hand", err)
+		self.assertIn("Check Airtable by hand", err)
 
 	def test_missing_credentials_stop_the_command(self):
 		with override_settings(AIRTABLE_PAT=""):

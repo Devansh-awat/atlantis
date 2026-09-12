@@ -132,7 +132,7 @@ def build_timelapse_audit(ship):
 	blocks = []
 	for journal in journals:
 		sessions = list(journal.timelapses.all())
-		lines = [f'"{journal.title}" — {journal.tracked_display} tracked']
+		lines = [f'"{journal.title}": {journal.tracked_display} tracked']
 		review = journal.timelapse_review_or_none
 		if review and review.internal_notes:
 			lines.append(f"  reviewer's notes: {review.internal_notes}")
@@ -232,7 +232,7 @@ def build_fields(ship, notes=None):
 		# Every token issued before `birthdate` joined HCA_SCOPE lacks the claim,
 		# so this clears itself the next time the shipper logs in.
 		notes.append(
-			"No birthdate from Hack Club Auth — the shipper may need to log in "
+			"No birthdate from Hack Club Auth. The shipper may need to log in "
 			"again to grant the birthdate scope."
 		)
 

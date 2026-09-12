@@ -62,7 +62,7 @@
                                 <em>deleted user</em>
                             {% endif %}
                         </td>
-                        <td>{{ log.target|default:"—" }}</td>
+                        <td>{{ log.target|default:"none" }}</td>
                         <td>
                             {{ log.method }} {{ log.path }}
                             {% if log.ip_address %}<br><small>{{ log.ip_address }}</small>{% endif %}

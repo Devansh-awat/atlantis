@@ -190,7 +190,7 @@
 		const drift = Math.abs(serverMs - nowMs());
 		if (drift > CLOCK_SKEW_WARN_MS) {
 			warn(`Your device clock is off by ~${Math.round(drift / 1000)}s vs the server. `
-				+ `Captures may be rejected — please fix your system clock.`);
+				+ `Captures may be rejected. Please fix your system clock.`);
 		}
 	}
 
@@ -235,7 +235,7 @@
 			if (attempt >= BACKOFF_MS.length) {
 				throw new Error(`${label} failed: HTTP ${res.status} ${body}`);
 			}
-			warn(`${label}: HTTP ${res.status} ${body} — retry in ${BACKOFF_MS[attempt] / 1000}s`);
+			warn(`${label}: HTTP ${res.status} ${body}, retry in ${BACKOFF_MS[attempt] / 1000}s`);
 			await sleep(BACKOFF_MS[attempt++]);
 		}
 	}
@@ -353,7 +353,7 @@
 			nextExpectedAt = await captureOnce();
 		} catch (e) {
 			if (e instanceof TerminalError) {
-				error(e.message + " — reconciling with server.");
+				error(e.message + "; reconciling with server.");
 				recording = false;
 				await syncBackend();
 				await recoverFromServer();
@@ -414,19 +414,19 @@
 		},
 		idle: {
 			label: "Not started", tone: "",
-			hint: "When you hit start, your browser asks which screen or window to share — "
-				+ "pick the one you'll be modelling in. Nothing is captured until you do.",
+			hint: "When you hit start, your browser asks which screen or window to share. "
+				+ "Pick the one you'll be modelling in. Nothing is captured until you do.",
 			buttons: { start: true },
 		},
 		live: {
 			label: "Recording", tone: "live", dot: true,
-			hint: "You're being recorded. Go work — just leave this tab open, and don't close "
+			hint: "You're being recorded. Go work; just leave this tab open, and don't close "
 				+ "the sharing bar your browser put up.",
 			buttons: { pause: true, stop: true },
 		},
 		paused: {
 			label: "Paused", tone: "paused",
-			hint: "Paused — no time is being tracked right now. Resume when you're back; "
+			hint: "Paused. No time is being tracked right now. Resume when you're back; "
 				+ "you'll be asked to share your screen again.",
 			buttons: { resume: true, stop: true },
 			stage: "Sharing is off while you're paused. Resume to see your screen here again.",
@@ -436,12 +436,12 @@
 			hint: "This session is still open, but your browser is no longer sharing a screen, "
 				+ "so nothing is being captured. Re-share to pick the clock back up.",
 			buttons: { reshare: true, stop: true },
-			stage: "Nothing is being captured — re-share your screen to start it back up.",
+			stage: "Nothing is being captured. Re-share your screen to start it back up.",
 		},
 		processing: {
 			label: "Building your video", tone: "processing",
 			hint: "Your screenshots are being stitched into a timelapse. This usually takes a "
-				+ "minute or two — you can leave this page, it'll finish without you.",
+				+ "minute or two. You can leave this page; it'll finish without you.",
 			buttons: {},
 			stage: "Recording finished. Stitching your screenshots together…",
 		},
@@ -450,21 +450,21 @@
 			hint: "All done. Your tracked time only counts once you tape this recording into "
 				+ "a lapse.",
 			buttons: {},
-			stage: "This recording is finished — the video is below.",
+			stage: "This recording is finished. The video is below.",
 		},
 		failed: {
 			label: "Failed", tone: "error",
-			hint: "This session couldn't be turned into a video. Ask an organizer — they can "
+			hint: "This session couldn't be turned into a video. Ask an organizer; they can "
 				+ "retry the compile without you losing the recording.",
 			buttons: {},
 			stage: "This recording couldn't be turned into a video.",
 		},
 		unavailable: {
 			label: "Not started", tone: "error",
-			hint: "Nothing is recording — the error above happened before a session could be "
+			hint: "Nothing is recording. The error above happened before a session could be "
 				+ "opened. Close this and try again.",
 			buttons: {},
-			stage: "Nothing to show — this recording never got going.",
+			stage: "Nothing to show. This recording never got going.",
 		},
 	};
 
@@ -501,7 +501,7 @@
 		if (ui.badge) ui.badge.hidden = name !== "live";
 		// Make the recording state visible from the tab strip, since the whole
 		// point is that the user is off working in another window.
-		document.title = name === "live" ? `● Recording — ${PAGE_TITLE}` : PAGE_TITLE;
+		document.title = name === "live" ? `● Recording · ${PAGE_TITLE}` : PAGE_TITLE;
 	}
 
 	function showVideo() {
@@ -601,7 +601,7 @@
 		} catch (e) {
 			setState("idle");
 			error(e.name === "AbortError"
-				? "Couldn't reach Lookout to check this session — you can still try starting a recording."
+				? "Couldn't reach Lookout to check this session. You can still try starting a recording."
 				: `Could not load session status: ${e.message}`);
 		} finally {
 			clearTimeout(timeout);
@@ -615,7 +615,7 @@
 		stopShare();
 		stopTicking(false);
 		setState("reshare");
-		warn("Screen sharing stopped — capture is on hold until you re-share.");
+		warn("Screen sharing stopped. Capture is on hold until you re-share.");
 	}
 
 	async function onStart() {
@@ -675,8 +675,8 @@
 
 	async function onStop() {
 		if (!window.confirm(
-			"Finish this timelapse? You can't add more time to it afterwards — "
-			+ "record a new one for your next session."
+			"Finish this timelapse? You can't add more time to it afterwards. "
+			+ "Record a new one for your next session."
 		)) return;
 		stopLoop();
 		try {

@@ -45,7 +45,7 @@
                             <td>{{ order.fulfiller }}</td>
                             <td>{{ order.admin_notes|default:"None" }}</td>
                             <td>{{ order.created_at|date:"M j, Y" }}</td>
-                            <td>{% if order.fulfilled_at %}{{ order.fulfilled_at|date:"M j, Y" }}{% else %}—{% endif %}</td>
+                            <td>{% if order.fulfilled_at %}{{ order.fulfilled_at|date:"M j, Y" }}{% else %}not yet{% endif %}</td>
                             <td>
                                 <form action="{% url 'update_order_status' order.id %}" method="post" class="order-actions">
                                     {% csrf_token %}
@@ -106,7 +106,7 @@
                             <td>{{ order.fulfiller.hackclub_profile.slack_username }}</td>
                             <td>{{ order.admin_notes|default:"None" }}</td>
                             <td>{{ order.created_at|date:"M j, Y" }}</td>
-                            <td>{% if order.fulfilled_at %}{{ order.fulfilled_at|date:"M j, Y" }}{% else %}—{% endif %}</td>
+                            <td>{% if order.fulfilled_at %}{{ order.fulfilled_at|date:"M j, Y" }}{% else %}not yet{% endif %}</td>
                             <td>
                                 <form action="{% url 'update_order_status' order.id %}" method="post" class="order-actions">
                                     {% csrf_token %}
@@ -168,7 +168,7 @@
                     box.textContent = "No address on file for this order.";
                     box.hidden = false;
                 } else if (data.error === "address_unavailable") {
-                    box.textContent = "Couldn't fetch this address from Hack Club identity — the buyer may need to log in again.";
+                    box.textContent = "Couldn't fetch this address from Hack Club identity. The buyer may need to log in again.";
                     box.hidden = false;
                 } else {
                     box.textContent = "Could not load address. Please try again.";

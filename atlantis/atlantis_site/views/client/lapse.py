@@ -147,8 +147,8 @@ def lapse_callback(request):
 		)
 		messages.error(
 			request,
-			"Lapse handed back a sign-in it won't accept. Try connecting again — "
-			"if it keeps happening, sign out of lapse.hackclub.com and back in.",
+			"Lapse handed back a sign-in it won't accept. Try connecting again. "
+			"If it keeps happening, sign out of lapse.hackclub.com and back in.",
 		)
 		return redirect(destination)
 

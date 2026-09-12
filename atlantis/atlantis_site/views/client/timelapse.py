@@ -89,7 +89,7 @@ def start_timelapse(request, project_id):
 
 	if not settings.LOOKOUT_ALLOW_NEW or not settings.LOOKOUT_TOKEN:
 		return refuse(
-			"Lookout recording is closed — record on lapse.hackclub.com instead.",
+			"Lookout recording is closed. Record on lapse.hackclub.com instead.",
 			status=410,
 		)
 

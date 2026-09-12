@@ -12,7 +12,7 @@
                     <p class="rq-stat-label">{{ card.label }}</p>
                     <p class="rq-stat-value{% if card.breached %} is-no{% endif %}">
                         {% if card.value is None %}
-                            &mdash;
+                            n/a
                         {% else %}
                             {{ card.value }}{{ card.unit }}
                         {% endif %}

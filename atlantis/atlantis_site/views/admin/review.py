@@ -105,8 +105,8 @@ def report_submission(request, submission):
         messages.warning(
             request,
             "Airtable never answered, so it's unclear whether the record was "
-            f"created ({submission.error}). Check the table before resubmitting — "
-            "this one will not retry on its own.",
+            f"created ({submission.error}). Check the table before resubmitting. "
+            "This one will not retry on its own.",
         )
     else:
         messages.error(

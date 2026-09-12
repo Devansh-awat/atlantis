@@ -20,7 +20,7 @@
 {% endblock %}
 
 {% block shortcut_rows %}
-    <dt><kbd>&#8984;</kbd>&thinsp;<kbd>P</kbd></dt><dd>Approve &mdash; finalizes, pays pearls, sends the record to HQ</dd>
+    <dt><kbd>&#8984;</kbd>&thinsp;<kbd>P</kbd></dt><dd>Approve: finalizes, pays pearls, sends the record to HQ</dd>
     <dt><kbd>&#8984;</kbd>&thinsp;<kbd>E</kbd></dt><dd>Return to T1</dd>
     <dt><kbd>&#8984;</kbd>&thinsp;<kbd>T</kbd></dt><dd>Return to T2</dd>
     <dt><kbd>&#8984;</kbd>&thinsp;<kbd>&crarr;</kbd></dt><dd>Submit the current draft</dd>
@@ -71,7 +71,7 @@
                     <p class="rv-airtable-state">{{ airtable_submission.notes|linebreaksbr }}</p>
                 {% endif %}
             {% else %}
-                <p class="rv-airtable-state">Not submitted yet &mdash; this is the text that will be sent on approval.</p>
+                <p class="rv-airtable-state">Not submitted yet. This is the text that will be sent on approval.</p>
             {% endif %}
             {% if override_justification %}
                 <pre class="rv-airtable-justification">{{ override_justification }}</pre>
@@ -135,7 +135,7 @@
             <span class="rv-payout-arrow">&rarr;</span>
             <span class="rv-payout-to" data-payout-out>{{ base_layers }} pearls</span>
         </div>
-        <p class="rv-payout-note">Scales the pearls only &mdash; the hours sent to Airtable are unchanged.</p>
+        <p class="rv-payout-note">Scales the pearls only. The hours sent to Airtable are unchanged.</p>
     </div>
 
     <div class="rv-verdicts rv-verdicts-three">
