@@ -28,7 +28,8 @@ from ..helpers import (
     is_valid_printables_url, get_model_info, validate_file_size,
     sniff_image_extension, random_storage_key,
     notify_followers, rate_limit, tracked_minutes_for_journals, format_minutes,
-    can_bypass_ship_requirements, ysws_block_reason,
+    can_bypass_ship_requirements, ysws_block_reason, field_max_length, fit, too_long,
+    INT_FIELD_MAX,
 )
 
 import os
@@ -49,6 +50,21 @@ def _recorded_at(created_at):
         return datetime.fromtimestamp(int(created_at) / 1000, tz=dt_timezone.utc)
     except (TypeError, ValueError, OverflowError, OSError):
         return None
+
+
+def _duration_seconds(duration):
+    """Lapse's `duration` as tracked seconds the column will hold.
+
+    Anything unreadable counts as no time rather than raising: this runs inside
+    the attach, where a ValueError out of int() would be a 500 on a lapse that
+    is otherwise fine, and a recording with no duration is already the ordinary
+    case the reviewer sees.
+    """
+    try:
+        seconds = int(duration or 0)
+    except (TypeError, ValueError):
+        return 0
+    return min(max(seconds, 0), INT_FIELD_MAX)
 
 
 def _already_attached(user, lapse_ids):
@@ -208,6 +224,13 @@ def create_project(request):
         messages.error(request, "Printables URL must be a valid printables.com link.")
         return redirect("projects")
 
+    # The column is narrower than the 2048 characters is_valid_printables_url
+    # will vouch for, and Postgres answers the overflow with a DataError — a
+    # 500 on a link that is otherwise perfectly good.
+    if too_long(printables_url, Project, "printablesUrl"):
+        messages.error(request, f"Printables URL too long (max {field_max_length(Project, 'printablesUrl')} chars)")
+        return redirect("projects")
+
     project = Project.objects.create(
         owner = request.user,
         title = title,
@@ -251,6 +274,13 @@ def edit_project(request, project_id):
 
     if printables_url and not is_valid_printables_url(printables_url):
         messages.error(request, "Printables URL must be a valid printables.com link.")
+        return redirect("projects")
+
+    # The column is narrower than the 2048 characters is_valid_printables_url
+    # will vouch for, and Postgres answers the overflow with a DataError — a
+    # 500 on a link that is otherwise perfectly good.
+    if too_long(printables_url, Project, "printablesUrl"):
+        messages.error(request, f"Printables URL too long (max {field_max_length(Project, 'printablesUrl')} chars)")
         return redirect("projects")
 
     project.title = title
@@ -302,6 +332,10 @@ def update_editor_model(request, project_id):
         
         if not detect_editor_from_link(editor_model_link):
             messages.error(request, f"Unsupported editor model link. Supported editors: {', '.join(ALLOWED_EDITORS)}.")
+            return redirect("project_detail", project_id=project_id)
+
+        if too_long(editor_model_link, Project, "editor_model_url"):
+            messages.error(request, f"Editor model link too long (max {field_max_length(Project, 'editor_model_url')} chars)")
             return redirect("project_detail", project_id=project_id)
         
         project.editor_model_url = editor_model_link
@@ -666,6 +700,12 @@ def create_journal(request, project_id):
 
         by_id = {item.get("id"): item for item in published if item.get("id")}
         for lapse_id in lapse_ids:
+            # Unlike the other Lapse strings below, this one is the uniqueness
+            # key and cannot be trimmed to fit — a prefix would collide with
+            # footage it isn't — so an id too wide for the column is refused.
+            if too_long(lapse_id, Timelapse, "lapse_id"):
+                messages.error(request, "One or more of those timelapses can't be attached. Refresh and try again.")
+                return redirect("project_detail", project_id=project_id)
             found = by_id.get(lapse_id)
             # Not on the account, still processing, or processing failed. All
             # three mean the same thing here: there is no footage to stand
@@ -683,6 +723,10 @@ def create_journal(request, project_id):
 
     if not title:
         messages.error(request, "Your lapse needs a title.")
+        return redirect("project_detail", project_id=project_id)
+
+    if too_long(title, Journal, "title"):
+        messages.error(request, f"Lapse title too long (max {field_max_length(Journal, 'title')} chars)")
         return redirect("project_detail", project_id=project_id)
 
     image_file = request.FILES.get("image")
@@ -753,13 +797,16 @@ def create_journal(request, project_id):
                     journal=journal,
                     source=Timelapse.Source.LAPSE,
                     lapse_id=item["id"],
-                    name=(item.get("name") or "")[:120],
-                    playback_url=item.get("playbackUrl") or "",
-                    lapse_thumbnail_url=item.get("thumbnailUrl") or "",
+                    # Trimmed to their columns, as the name already was:
+                    # these are Lapse's strings, and one longer than we
+                    # allowed for would fail the write rather than the attach.
+                    name=fit(item.get("name"), Timelapse, "name"),
+                    playback_url=fit(item.get("playbackUrl"), Timelapse, "playback_url"),
+                    lapse_thumbnail_url=fit(item.get("thumbnailUrl"), Timelapse, "lapse_thumbnail_url"),
                     recorded_at=_recorded_at(item.get("createdAt")),
                     # Lapse's `duration` is recorded seconds, already in the
                     # unit this column is kept in. See the Timelapse docstring.
-                    tracked_seconds=int(item.get("duration") or 0),
+                    tracked_seconds=_duration_seconds(item.get("duration")),
                     # It arrived finished; there was no lifecycle to watch.
                     status=Timelapse.Status.COMPLETE,
                 )

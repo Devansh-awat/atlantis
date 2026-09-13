@@ -13,7 +13,7 @@ from ...models import (
     PAYOUT_MULTIPLIER_STEP, PEARLS_PER_HOUR,
 )
 from ...submissions import build_override_justification, submit_ship
-from ..helpers import check_perms, send_slack_dm, send_slack_message, slack_mention, record_audit, get_model_info, layers_for_minutes, build_journal_timeline, reviewer_leaderboard, approved_minutes_for_journals, build_review_history, rate_limit, safe_redirect_back
+from ..helpers import check_perms, send_slack_dm, send_slack_message, slack_mention, record_audit, get_model_info, layers_for_minutes, build_journal_timeline, reviewer_leaderboard, approved_minutes_for_journals, build_review_history, rate_limit, safe_redirect_back, INT_FIELD_MAX, INT_FIELD_MIN
 from .queue import (
     QUEUES, annotate_recordings, dash_context, decorate_rows, go_to_next,
     journal_stats, owner_snapshot, parse_skip, preflight_checks, review_context,
@@ -418,6 +418,14 @@ def t3_decision(request, ship_id):
         messages.error(request, f"Expected integer, receieved {airtable_time_raw}")
         return redirect("fraud_review_project", ship_id=ship_id)
 
+    # Both land in plain integer columns, and payout_time is multiplied up into
+    # a pearl balance that lands in a third. Past the range the driver raises
+    # NumericValueOutOfRange, which is a 500 rather than a number to correct.
+    for label, value in (("Payout time", payout_time), ("Airtable time", airtable_time)):
+        if not INT_FIELD_MIN <= value <= INT_FIELD_MAX:
+            messages.error(request, f"{label} is out of range.")
+            return redirect("fraud_review_project", ship_id=ship_id)
+
     payout_multiplier, multiplier_error = parse_payout_multiplier(request.POST.get("payout_multiplier"))
     if multiplier_error:
         messages.error(request, multiplier_error)
@@ -439,9 +447,15 @@ def t3_decision(request, ship_id):
                 ship.status = Ship.ShipStatus.T2_QUEUE
                 message = "returned to T2 reviewers"
             case T3.Decision.APPROVE:
-                ship.status = Ship.ShipStatus.FINALIZED
-                profile = Profile.objects.select_for_update().get(user=ship.project.owner)
+                # A shipper who never came through the HCA login has no profile
+                # row; paying them out used to be a DoesNotExist.
+                owner_profile, _ = Profile.objects.get_or_create(user=ship.project.owner)
+                profile = Profile.objects.select_for_update().get(pk=owner_profile.pk)
                 payout_layers = layers_for_minutes(payout_time, payout_multiplier)
+                if not INT_FIELD_MIN <= profile.layers + payout_layers <= INT_FIELD_MAX:
+                    messages.error(request, "That payout would put the shipper's pearl balance out of range.")
+                    return redirect("fraud_review_project", ship_id=ship_id)
+                ship.status = Ship.ShipStatus.FINALIZED
                 profile.layers += payout_layers
                 profile.save(update_fields=["layers"])
             case _:
@@ -466,7 +480,8 @@ def t3_decision(request, ship_id):
     # back. submit_ship is safe to call again and refuses to send twice.
     submission = submit_ship(ship) if decision == T3.Decision.APPROVE else None
 
-    owner_slack_id = ship.project.owner.hackclub_profile.slack_id
+    owner_profile = getattr(ship.project.owner, "hackclub_profile", None)
+    owner_slack_id = owner_profile.slack_id if owner_profile else ""
     send_slack_dm(f"Your project <https://atlantis.hackclub.com/projects/{ship.project.id}|{ship.project.title}> has been finalized and you've received {payout_layers} pearls for it!", owner_slack_id) if decision == T3.Decision.APPROVE else send_slack_dm(f"Your project <https://atlantis.hackclub.com/projects/{ship.project.id}|{ship.project.title}> has been {message}!", owner_slack_id)
 
     record_audit(request, "t3_decision", target=f"Ship #{ship.id} ({ship.project.title})", metadata={
@@ -531,7 +546,8 @@ def lock_project(request, project_id):
         "owner": project.owner.username,
     })
 
-    owner_slack_id = project.owner.hackclub_profile.slack_id
+    owner_profile = getattr(project.owner, "hackclub_profile", None)
+    owner_slack_id = owner_profile.slack_id if owner_profile else ""
     if owner_slack_id:
         send_slack_dm(f"Your project <https://atlantis.hackclub.com/projects/{project_id}|{project.title}> has been locked.", owner_slack_id)
 
@@ -552,7 +568,8 @@ def unlock_project(request, project_id):
         "owner": project.owner.username,
     })
 
-    owner_slack_id = project.owner.hackclub_profile.slack_id
+    owner_profile = getattr(project.owner, "hackclub_profile", None)
+    owner_slack_id = owner_profile.slack_id if owner_profile else ""
     if owner_slack_id:
         send_slack_dm(f"Your project <https://atlantis.hackclub.com/projects/{project_id}|{project.title}> has been unlocked.", owner_slack_id)
 

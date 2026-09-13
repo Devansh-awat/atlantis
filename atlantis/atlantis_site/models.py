@@ -257,7 +257,7 @@ class Project(models.Model):
 	)
 	title = models.CharField(max_length=60, default="My Project")
 	description = models.CharField(max_length=1000)
-	printablesUrl = models.CharField(max_length=150, blank=True)
+	printablesUrl = models.CharField(max_length=2048, blank=True)
 	editor_model_url = models.CharField(max_length=2048, blank=True)
 	# Screenshot of the model, shown on the project's book cover. Required to ship.
 	image_url = models.CharField(max_length=2048, blank=True)
@@ -967,7 +967,9 @@ class LapseAccount(models.Model):
 		from .lapse import token_expiry
 
 		self.encrypted_token = encrypt_token(token)
-		self.scope = token.get("scope", "")
+		# Trimmed, not refused: the scope string is Lapse's to write and a long
+		# one would fail the write rather than the authorization it belongs to.
+		self.scope = (token.get("scope") or "")[:self._meta.get_field("scope").max_length]
 
 		margin = timedelta(seconds=60)
 		claimed = token_expiry(token.get("access_token", ""))

@@ -10,7 +10,7 @@ from django.db.models import Exists, OuterRef
 from ...models import Profile, Item, Order, ShopCategory
 from ...crypto import format_address
 from ...hca import AddressUnavailable
-from ..helpers import check_perms, record_audit, send_slack_dm, is_valid_image_url
+from ..helpers import check_perms, record_audit, send_slack_dm, is_valid_image_url, INT_FIELD_MAX, field_max_length, too_long
 
 @staff_member_required
 @check_perms(["atlantis_site.organizer", "atlantis_site.fulfillment"])
@@ -54,9 +54,15 @@ def update_order_status(request, order_id):
         messages.error(request, "Invalid order action.")
         return redirect("fulfillment_dash")
     
+    order = get_object_or_404(Order, id=order_id)
+
     with transaction.atomic():
-        order = Order.objects.select_for_update().get(id=order_id)
-        profile = Profile.objects.select_for_update().get(user=order.owner)
+        order = Order.objects.select_for_update().get(id=order.id)
+        # get_or_create rather than get: a user who has never been through the
+        # HCA login (a `createsuperuser` account, say) has no profile row, and
+        # refunding their order used to be a DoesNotExist rather than a refund.
+        profile, _ = Profile.objects.get_or_create(user=order.owner)
+        profile = Profile.objects.select_for_update().get(pk=profile.pk)
 
         prev_status = order.status
         order.status = status_map[action]
@@ -103,7 +109,7 @@ def update_order_status(request, order_id):
         "new_status": order.status,
     })
 
-    owner_slack_id = order.owner.hackclub_profile.slack_id
+    owner_slack_id = profile.slack_id
     if owner_slack_id:
         dm_messages = {
             Order.OrderStatus.FULFILLED: f"Your order for {order.quantity}x {order.item.name} has been fulfilled!",
@@ -143,6 +149,33 @@ def view_order_address(request, order_id):
     })
 
     return JsonResponse({"ok": True, "address": address})
+
+
+# Item names, costs and stock arrive as free text on the shop form, and every
+# one of them lands in a column that answers a bad value with a driver error
+# rather than a message. Checked in one place because create and edit take the
+# same fields and have to agree about what fits.
+def _item_field_error(name, description, category, imageUrl, cost, stock):
+    """The first reason these values can't be stored, or None."""
+    for label, value, field in (
+        ("Name", name, "name"),
+        ("Description", description, "description"),
+        ("Category", category, "category"),
+        ("Image URL", imageUrl, "imageUrl"),
+    ):
+        if too_long(value, Item, field):
+            return f"{label} too long (max {field_max_length(Item, field)} chars)."
+
+    # `cost` is a PositiveIntegerField, so a negative one is a CHECK violation
+    # — an IntegrityError, not a validation message — and either end of the
+    # range overflows the column.
+    if cost < 0:
+        return "Cost can't be negative."
+    if cost > INT_FIELD_MAX:
+        return f"Cost must be {INT_FIELD_MAX} or less."
+    if stock > INT_FIELD_MAX:
+        return f"Stock must be {INT_FIELD_MAX} or less."
+    return None
 
 
 @staff_member_required
@@ -189,6 +222,11 @@ def create_item(request):
         return redirect("shop_dash")
     if stock < -1:
         messages.error(request, "Stock must be -1 (unlimited) or a non-negative number.")
+        return redirect("shop_dash")
+
+    field_error = _item_field_error(name, description, category, imageUrl, cost, stock)
+    if field_error:
+        messages.error(request, field_error)
         return redirect("shop_dash")
 
     ShopCategory.ensure(category)
@@ -254,6 +292,11 @@ def edit_item(request, item_id):
         return redirect("shop_dash")
     if stock < -1:
         messages.error(request, "Stock must be -1 (unlimited) or a non-negative number.")
+        return redirect("shop_dash")
+
+    field_error = _item_field_error(name, description, category, imageUrl, cost, stock)
+    if field_error:
+        messages.error(request, field_error)
         return redirect("shop_dash")
 
     previous = {

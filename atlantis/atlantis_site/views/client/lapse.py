@@ -32,7 +32,7 @@ from django.views.decorators.http import require_POST
 
 from ... import lapse
 from ...models import LapseAccount, Project, Timelapse
-from ..helpers import rate_limit
+from ..helpers import fit, rate_limit
 
 logger = logging.getLogger(__name__)
 
@@ -152,12 +152,15 @@ def lapse_callback(request):
 		)
 		return redirect(destination)
 
+	# Trimmed to the columns: what Lapse calls someone is not ours to refuse,
+	# and a display name wider than the column would fail the write — turning a
+	# successful authorization into a 500 on the way back from it.
 	account, _ = LapseAccount.objects.get_or_create(user=request.user)
 	account.save_token(token)
-	account.lapse_user_id = user.get("id", "")
-	account.handle = user.get("handle", "")
-	account.display_name = user.get("displayName", "")
-	account.profile_picture_url = user.get("profilePictureUrl", "")
+	account.lapse_user_id = fit(user.get("id", ""), LapseAccount, "lapse_user_id")
+	account.handle = fit(user.get("handle", ""), LapseAccount, "handle")
+	account.display_name = fit(user.get("displayName", ""), LapseAccount, "display_name")
+	account.profile_picture_url = fit(user.get("profilePictureUrl", ""), LapseAccount, "profile_picture_url")
 	account.save()
 
 	messages.success(

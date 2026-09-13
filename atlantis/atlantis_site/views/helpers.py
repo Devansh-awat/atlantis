@@ -527,6 +527,43 @@ def is_valid_editor_model_url(value):
     # .zip upload is still a source file we accept.
     return detect_editor(value) is not None or is_editor_model_file(value)
 
+# What Postgres will take in an `integer` column. Anything past it comes back
+# as NumericValueOutOfRange from the driver — a 500 on a form the user could
+# have been told about — so views that build a number out of POST data check
+# the range themselves first.
+INT_FIELD_MAX = 2**31 - 1
+INT_FIELD_MIN = -(2**31)
+
+
+def field_max_length(model, field_name):
+    """How long a posted value may be before its column refuses it.
+
+    Read off the model rather than written down in each view. Postgres answers
+    an over-long CharField with a DataError, which surfaces as a 500 rather
+    than the sentence the user should have got, and a hardcoded number goes
+    stale the first time a migration widens the column.
+    """
+    return model._meta.get_field(field_name).max_length
+
+
+def too_long(value, model, field_name):
+    """True when `value` wouldn't fit `model.field_name`."""
+    limit = field_max_length(model, field_name)
+    return limit is not None and len(value or "") > limit
+
+
+def fit(value, model, field_name):
+    """`value` trimmed to what `model.field_name` will hold.
+
+    For values we don't control and can't bounce a form over — what an upstream
+    identity provider calls someone, say. Losing the tail of a display name is
+    a worse name; failing the write is a 500.
+    """
+    limit = field_max_length(model, field_name)
+    value = value or ""
+    return value[:limit] if limit is not None else value
+
+
 def validate_file_size(file, max_mb):
     return file.size <= max_mb * 1024 * 1024
 

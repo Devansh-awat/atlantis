@@ -9,8 +9,8 @@ from django.contrib import messages
 
 import os
 
-from ...models import Project
-from ..helpers import check_perms, is_valid_image_url, record_audit, is_valid_printables_url, is_valid_editor_model_url, tracked_minutes_for_journals, format_minutes
+from ...models import Profile, Project
+from ..helpers import check_perms, is_valid_image_url, record_audit, is_valid_printables_url, is_valid_editor_model_url, tracked_minutes_for_journals, format_minutes, INT_FIELD_MAX, INT_FIELD_MIN, field_max_length, too_long
 
 @staff_member_required
 @check_perms(["atlantis_site.organizer"])
@@ -53,21 +53,55 @@ def edit_user(request, user_id):
     }
 
     new = {
-        "username": request.POST.get("editSub"),
-        "email": request.POST.get("editEmail"),
-        "first_name": request.POST.get("editFirstName"),
-        "last_name": request.POST.get("editLastName"),
-        "slack_username": request.POST.get("editUsername"),
-        "slack_id": request.POST.get("editSlackId"),
-        "slack_pfp_url": request.POST.get("editSlackPfpUrl"),
-        "layers": request.POST.get("editLayers"),
+        "username": (request.POST.get("editSub") or "").strip(),
+        "email": (request.POST.get("editEmail") or "").strip(),
+        "first_name": (request.POST.get("editFirstName") or "").strip(),
+        "last_name": (request.POST.get("editLastName") or "").strip(),
+        "slack_username": (request.POST.get("editUsername") or "").strip(),
+        "slack_id": (request.POST.get("editSlackId") or "").strip(),
+        "slack_pfp_url": (request.POST.get("editSlackPfpUrl") or "").strip(),
+        "layers": (request.POST.get("editLayers") or "").strip(),
         "groups": request.POST.getlist("groups")
     }
 
+    # Every one of these is a required field landing in a NOT NULL column, so
+    # the complaint has to end the request. Reporting it and writing the row
+    # anyway put a None into `username` and answered the form with a 500.
     unrequired_items = ["slack_pfp_url", "groups"]
     for key, value in new.items():
         if not value and key not in unrequired_items:
-            messages.error(request, f"{key.capitalize()} is required!")       
+            messages.error(request, f"{key.capitalize()} is required!")
+            return redirect("users")
+
+    # Widths, for the same reason: Postgres answers an over-long value with a
+    # DataError, and the reviewer gets a 500 instead of the field to shorten.
+    for key, model, field in (
+        ("username", user_model, "username"),
+        ("email", user_model, "email"),
+        ("first_name", user_model, "first_name"),
+        ("last_name", user_model, "last_name"),
+        ("slack_username", Profile, "slack_username"),
+        ("slack_id", Profile, "slack_id"),
+    ):
+        if too_long(new[key], model, field):
+            messages.error(request, f"{key.capitalize()} too long (max {field_max_length(model, field)} chars)!")
+            return redirect("users")
+
+    # `username` is unique, and a collision is an IntegrityError — a 500 on
+    # what is really just a name somebody else already has.
+    if user_model.objects.filter(username=new["username"]).exclude(id=targetUser.id).exists():
+        messages.error(request, f'Another user already has the username "{new["username"]}".')
+        return redirect("users")
+
+    try:
+        new_layers = int(new["layers"])
+    except (ValueError, TypeError):
+        messages.error(request, "Layers must be a whole number!")
+        return redirect("users")
+
+    if not INT_FIELD_MIN <= new_layers <= INT_FIELD_MAX:
+        messages.error(request, f"Layers must be between {INT_FIELD_MIN} and {INT_FIELD_MAX}.")
+        return redirect("users")
 
     targetUser.username = new["username"]
     targetUser.email = new["email"]
@@ -75,18 +109,21 @@ def edit_user(request, user_id):
     targetUser.last_name = new["last_name"]
     targetProfile.slack_username = new["slack_username"]
     targetProfile.slack_id = new["slack_id"]
-
-    new_layers_raw = new["layers"]
-    try:
-        new_layers = int(new_layers_raw)
-        targetProfile.layers = new_layers
-    except (ValueError, TypeError):
-        pass
+    targetProfile.layers = new_layers
 
     new_pfp = new["slack_pfp_url"]
-    targetProfile.slack_pfp_url = new_pfp if is_valid_image_url(new_pfp) else targetUser.hackclub_profile.slack_pfp_url
+    keep_pfp = (
+        too_long(new_pfp, Profile, "slack_pfp_url")
+        or not is_valid_image_url(new_pfp)
+    )
+    targetProfile.slack_pfp_url = targetProfile.slack_pfp_url if keep_pfp else new_pfp
 
-    new_groups = new["groups"]
+    # Resolved to rows rather than handed to set() as raw strings: a posted id
+    # that isn't a number is a ValueError and one that names no group is an
+    # IntegrityError on the through table, and both are 500s.
+    new_groups = list(Group.objects.filter(id__in=[
+        gid for gid in new["groups"] if gid.isdigit()
+    ]))
     targetUser.groups.set(new_groups)
     targetUser.is_staff = targetUser.groups.exists()
 
@@ -164,7 +201,17 @@ def admin_edit_project(request, project_id):
     if not is_valid_editor_model_url(editor_model_url) and editor_model_url:
         messages.error(request, "Invalid editor model URL")
         return redirect("manage_projects")
-    
+
+    # Both URL validators vouch for strings wider than the columns that hold
+    # them, so the overflow would land as a DataError rather than a message.
+    for label, value, field in (
+        ("Printables URL", printablesUrl, "printablesUrl"),
+        ("Editor model URL", editor_model_url, "editor_model_url"),
+    ):
+        if too_long(value, Project, field):
+            messages.error(request, f"{label} too long (max {field_max_length(Project, field)} chars)")
+            return redirect("manage_projects")
+
     project.title = title
     project.description = description
     project.printablesUrl = printablesUrl

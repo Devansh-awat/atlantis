@@ -8,7 +8,7 @@ from django.views.decorators.http import require_POST
 from ...models import Profile, Item, Order, ShopCategory
 from ...crypto import format_address
 from ...hca import AddressUnavailable
-from ..helpers import rate_limit
+from ..helpers import INT_FIELD_MAX, field_max_length, rate_limit, too_long
 
 @login_required
 def shop(request):
@@ -55,7 +55,18 @@ def order_item(request, item_id):
     except ValueError:
         messages.error(request, "Quantity must be a positive number.")
         return redirect("shop")
-    
+
+    # Stock bounds this for anything limited, but an unlimited item has no
+    # ceiling but the column's, and a quantity past it is a DataError out of
+    # the driver rather than a sentence about the order.
+    if quantity > INT_FIELD_MAX:
+        messages.error(request, "That's more than anyone can order at once.")
+        return redirect("shop")
+
+    if too_long(user_notes, Order, "user_notes"):
+        messages.error(request, f"Order notes too long (max {field_max_length(Order, 'user_notes')} chars).")
+        return redirect("shop")
+
     total_cost = item.cost * quantity
 
     # Resolved before the transaction: this calls out to HCA, which has no
@@ -64,6 +75,12 @@ def order_item(request, item_id):
     try:
         address_id = request.user.hackclub_profile.primary_address_id
     except AddressUnavailable:
+        address_id = ""
+
+    # An id wider than the column is the same situation as not getting one at
+    # all — fulfillment resolves the primary address either way — and a stored
+    # prefix would be an id that resolves to nothing.
+    if too_long(address_id, Order, "address_id"):
         address_id = ""
 
     with transaction.atomic():
