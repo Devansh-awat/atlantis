@@ -440,16 +440,48 @@ a.ink-btn {
     color: #8E3728;
 }
 
+/* A button so the clipped note can be opened from the keyboard too, drawn as
+   the line of handwriting it was before. */
 .ship-note {
+    width: 100%;
     margin: 0;
-    padding-bottom: 0.16em;
+    padding: 0 0 0.16em;
+    border: none;
+    background: none;
     color: var(--ink-soft);
     font-size: 1.5cqw;
+    text-align: left;
+    cursor: default;
     display: -webkit-box;
     -webkit-line-clamp: 1;
     line-clamp: 1;
     -webkit-box-orient: vertical;
     overflow: hidden;
+    /* A reviewer who types one long unbroken word would otherwise run it off
+       the edge of the page instead of filling the line and stopping. */
+    overflow-wrap: anywhere;
+}
+
+/* Nothing hidden, nothing to click. */
+.ship-note:not(.is-clipped) {
+    pointer-events: none;
+}
+
+.ship-note.is-clipped {
+    cursor: pointer;
+}
+
+.ship-note.is-clipped:hover,
+.ship-note.is-clipped:focus-visible {
+    color: var(--ink);
+    text-decoration: underline;
+    text-underline-offset: 0.18em;
+}
+
+/* The whole note, wrapped, with the paragraph breaks the writer left in it. */
+.note-full {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 /* ---------- taped-in photos ---------- */

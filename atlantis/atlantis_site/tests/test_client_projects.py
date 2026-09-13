@@ -285,6 +285,19 @@ class ProjectDetailTests(BaseTestCase):
 		response = self._detail(project)
 		self.assertEqual(response.context["ships"][0].latest_feedback, "newer")
 
+	def test_long_feedback_is_carried_whole_for_the_click(self):
+		"""The page only has a line for the note, so the rest of it rides
+		along in the attribute the slip reads."""
+		from ..models import T1
+		project = make_project(self.user, shippable=True)
+		ship = make_ship(project)
+		reviewer = make_user("reviewer")
+		feedback = "the walls are too thin. " * 20
+		T1.objects.create(ship=ship, reviewer=reviewer, feedback=feedback, internal_notes="", approved=False)
+		body = self._detail(project).content.decode()
+		self.assertIn('class="ship-note js-note"', body)
+		self.assertIn(f'data-note="{feedback}"', body)
+
 	def test_printables_data_from_api(self):
 		self.model_info_mocks[0].return_value = {"makesCount": 7}
 		project = make_project(self.user, shippable=True)

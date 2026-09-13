@@ -111,8 +111,13 @@
                                 shipped {{ ship.created_at|date:"M j" }} &middot;
                                 <span class="ship-status">{{ ship.get_status_display|lower }}</span>
                             </p>
+                            {% comment %}
+                            The note is clamped to the line the page has room for.
+                            When there is more of it than that, the script below
+                            marks it clipped and the click opens the whole thing.
+                            {% endcomment %}
                             {% if forloop.first and ship.latest_feedback %}
-                                <p class="ship-note">&ldquo;{{ ship.latest_feedback }}&rdquo;</p>
+                                <button type="button" class="ship-note js-note" data-note="{{ ship.latest_feedback }}">&ldquo;{{ ship.latest_feedback }}&rdquo;</button>
                             {% endif %}
                         {% empty %}
                             <p class="ship-line dim">nothing shipped yet.</p>
@@ -348,6 +353,14 @@
         {% endcomment %}
         {% if show_lookout %}{% include "atlantis_site/_lookout_slip.html" %}{% endif %}
         {% endif %}
+
+        <div class="slip" id="slip-note" hidden>
+            <h2>What the reviewer said</h2>
+            <p class="note-full" id="note-full"></p>
+            <div class="slip-actions">
+                <button type="button" data-close>Close</button>
+            </div>
+        </div>
 
         <div class="slip slip--wide" id="slip-zoom" hidden>
             <h2 id="zoom-title">Lapse</h2>

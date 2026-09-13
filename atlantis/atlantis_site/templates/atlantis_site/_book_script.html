@@ -101,6 +101,50 @@ everything a reader needs, with none of the owner's editing.
             window.atlantisSlip = { open, close, layer, setOpener: (el) => { opener = el; } };
         })();
 
+        // ---- the reviewer's note, in full ----
+        (function () {
+            const notes = Array.from(document.querySelectorAll('.js-note'));
+            if (!notes.length) return;
+            const full = document.getElementById('note-full');
+
+            // Only a note with more to it than the page shows is worth a click,
+            // and whether that is so depends on the width it was laid out at.
+            // A page waiting in the store measures nothing, so it keeps the
+            // answer it had until it is back on a leaf.
+            function measure(note) {
+                if (!note.clientHeight) return;
+                // Height catches the usual case, width the note that is one
+                // long word the line cannot break far enough to fit.
+                const clipped = note.scrollHeight > note.clientHeight + 1
+                    || note.scrollWidth > note.clientWidth + 1;
+                note.classList.toggle('is-clipped', clipped);
+                note.tabIndex = clipped ? 0 : -1;
+                if (clipped) {
+                    note.title = 'read the whole note';
+                } else {
+                    note.removeAttribute('title');
+                }
+            }
+
+            notes.forEach((note) => {
+                measure(note);
+                // Catches all three ways the line can change: the window
+                // resizing, the book falling back to the flowed layout, and the
+                // page being turned to and from.
+                if (window.ResizeObserver) {
+                    new ResizeObserver(() => measure(note)).observe(note);
+                }
+            });
+
+            document.addEventListener('click', (e) => {
+                const note = e.target.closest('.js-note');
+                if (!note || !note.classList.contains('is-clipped')) return;
+                full.textContent = note.dataset.note || '';
+                window.atlantisSlip.setOpener(note);
+                window.atlantisSlip.open('slip-note');
+            });
+        })();
+
         // ---- a lapse, close up ----
         (function () {
             const media = document.getElementById('zoom-media');
