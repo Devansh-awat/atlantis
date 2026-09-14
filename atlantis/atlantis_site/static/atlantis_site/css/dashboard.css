@@ -261,3 +261,24 @@ body {
     top: -61.082%;
     width: 270.185%;
 }
+
+/* Sits under the pearl counter, in the same corner. Staff only, so it stays
+   quiet until it is pointed at. */
+#hud-admin {
+    right: clamp(12px, 1.6vw, 34px);
+    top: calc(clamp(12px, 2.2vh, 34px) + clamp(30px, 3.3vw, 64px) + 0.4em);
+    padding: 0.05em 0.6em 0.15em;
+    border-radius: 0.6em;
+    background-color: rgba(0, 46, 79, 0.72);
+    color: #E5F2FC;
+    font-size: clamp(15px, 1.35vw, 26px);
+    line-height: 1.35;
+    text-decoration: none;
+    opacity: 0.55;
+    transition: opacity 0.15s ease-out;
+}
+
+#hud-admin:hover,
+#hud-admin:focus-visible {
+    opacity: 1;
+}

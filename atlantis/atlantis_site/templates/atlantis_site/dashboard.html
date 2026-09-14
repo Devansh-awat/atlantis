@@ -57,5 +57,13 @@
         </span>
         <span>{{ profile.layers }}</span>
     </div>
+
+    {# The same gate admin_dash is behind: staff, plus one of the review or
+       organizer perms. The link is only shown to someone /root will let in. #}
+    {% if user.is_staff %}
+        {% if perms.atlantis_site.organizer or perms.atlantis_site.fulfillment or perms.atlantis_site.t1_review or perms.atlantis_site.t2_review or perms.atlantis_site.t3_review or perms.atlantis_site.timelapse_review %}
+            <a class="hud" id="hud-admin" href="{% url 'admin_dash' %}">admin</a>
+        {% endif %}
+    {% endif %}
 </body>
 </html>
