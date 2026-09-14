@@ -98,7 +98,7 @@
 
                         {% if is_owner and not project.locked %}
                             <div class="page-actions--minor">
-                                <button type="button" class="ink-link js-slip" data-slip="slip-model">upload editor file</button>
+                                <button type="button" class="ink-link js-slip" data-slip="slip-model">{% if project.editor_model_url %}replace{% else %}upload{% endif %} editor file</button>
                             </div>
                         {% endif %}
                     </div>
@@ -316,6 +316,9 @@
         <div class="slip" id="slip-model" hidden>
             <h2>Editor file</h2>
             <p>Your source model, from any of: {{ allowed_editors|join:", " }}. If it doesn't fit in one file, upload a .zip of the project.</p>
+            {% if project.editor_model_url %}
+                <p class="slip-note">Currently {% if project.editor_name %}{{ project.editor_name }}{% else %}a source file{% endif %}. Uploading or linking again replaces it.</p>
+            {% endif %}
             <form action="{% url 'update_editor_model' project.id %}" method="post" enctype="multipart/form-data">
                 {% csrf_token %}
                 <label>
@@ -323,10 +326,18 @@
                     <input type="file" name="editor_model_file" accept="{{ allowed_editor_extensions }}">
                 </label>
                 <label>
-                    Or paste a link to it
+                    Or paste a link
                     <input type="url" name="editor_model_link" placeholder="https://...">
+                    <span class="slip-hint">A {{ linkable_editors|join:" or " }} share link, or a direct link to the file.</span>
                 </label>
                 <div class="slip-actions">
+                    {% if project.editor_model_url %}
+                        {% comment %}
+                        Away from the pair on the right, so it is never the button beside
+                        Save. formnovalidate so a half-typed link can't block the removal.
+                        {% endcomment %}
+                        <button type="submit" name="clear" value="1" class="is-danger is-aside" formnovalidate>Remove</button>
+                    {% endif %}
                     <button type="button" data-close>Cancel</button>
                     <button type="submit">Save</button>
                 </div>

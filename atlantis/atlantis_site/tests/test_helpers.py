@@ -10,6 +10,7 @@ from django.test import RequestFactory, TestCase
 from slack_sdk.errors import SlackApiError
 
 from ..models import (
+	ALLOWED_EDITORS,
 	AuditLog,
 	InternalComment,
 	T1,
@@ -60,6 +61,17 @@ class EditorDetectionTests(TestCase):
 		self.assertTrue(is_editor_model_file("part.f3d"))
 		self.assertFalse(is_editor_model_file("notes.txt"))
 		self.assertFalse(is_editor_model_file(""))
+
+	def test_unlisted_extensions_upload_but_name_no_editor(self):
+		# Accepted without being advertised: it passes validation, stays out of
+		# the editor list the page reads from, and names no editor, so no copy
+		# anywhere ends up saying it.
+		self.assertTrue(is_editor_model_file("design.shapr"))
+		self.assertTrue(is_editor_model_file("DESIGN.SHAPR"))
+		self.assertTrue(is_editor_model_file("editor_models/abc123.shapr"))
+		self.assertTrue(is_valid_editor_model_url("editor_models/abc123.shapr"))
+		self.assertIsNone(detect_editor("design.shapr"))
+		self.assertNotIn("Shapr3D", ALLOWED_EDITORS)
 
 	def test_detect_editor_from_filename_unknown(self):
 		self.assertIsNone(detect_editor_from_filename("model.stl"))

@@ -1021,6 +1021,99 @@ class UpdateEditorModelTests(BaseTestCase):
 		response = self._update(editor_model_file=big)
 		self.assertIn("Editor model file too large. Max 50MB.", message_texts(response))
 
+	def test_direct_link_to_a_source_file_accepted(self):
+		"""Solidworks and FreeCAD have no share domain, so a direct link is the
+		only link those two can offer — the admin form has always taken one."""
+		link = "https://files.example.com/assembly.sldasm"
+		response = self._update(editor_model_link=link)
+		self.assertIn("Editor model updated successfully.", message_texts(response))
+		self.project.refresh_from_db()
+		self.assertEqual(self.project.editor_model_url, link)
+
+	def test_direct_link_to_an_archive_accepted(self):
+		link = "https://files.example.com/project.zip"
+		self._update(editor_model_link=link)
+		self.project.refresh_from_db()
+		self.assertEqual(self.project.editor_model_url, link)
+
+	def test_link_replaces_an_existing_link(self):
+		self.project.editor_model_url = VALID_EDITOR_LINK
+		self.project.save()
+		newer = "https://cad.onshape.com/documents/newer"
+		self._update(editor_model_link=newer)
+		self.project.refresh_from_db()
+		self.assertEqual(self.project.editor_model_url, newer)
+
+	@override_settings(ALLOW_JOURNALING=True)
+	def test_file_replaces_an_existing_link(self):
+		from django.core.files.uploadedfile import SimpleUploadedFile
+		self.project.editor_model_url = VALID_EDITOR_LINK
+		self.project.save()
+		self._update(editor_model_file=SimpleUploadedFile("part.f3d", b"fusion data"))
+		self.project.refresh_from_db()
+		self.assertTrue(self.project.editor_model_url.startswith("editor_models/"))
+
+	def test_clear_removes_the_model(self):
+		self.project.editor_model_url = VALID_EDITOR_LINK
+		self.project.save()
+		response = self._update(clear="1")
+		self.assertIn("Editor model removed.", message_texts(response))
+		self.project.refresh_from_db()
+		self.assertEqual(self.project.editor_model_url, "")
+
+	def test_clear_wins_over_the_fields_submitted_beside_it(self):
+		"""Remove is a submit button on the form carrying the other two fields."""
+		self.project.editor_model_url = VALID_EDITOR_LINK
+		self.project.save()
+		self._update(clear="1", editor_model_link="https://cad.onshape.com/documents/other")
+		self.project.refresh_from_db()
+		self.assertEqual(self.project.editor_model_url, "")
+
+	def test_clear_with_nothing_set_is_refused(self):
+		response = self._update(clear="1")
+		self.assertIn("There is no editor model to remove.", message_texts(response))
+
+	def test_clear_on_locked_project_refused(self):
+		self.project.editor_model_url = VALID_EDITOR_LINK
+		self.project.locked = True
+		self.project.save()
+		self._update(clear="1")
+		self.project.refresh_from_db()
+		self.assertEqual(self.project.editor_model_url, VALID_EDITOR_LINK)
+
+	@override_settings(ALLOW_JOURNALING=True)
+	def test_unlisted_extension_uploads(self):
+		from django.core.files.uploadedfile import SimpleUploadedFile
+		response = self._update(editor_model_file=SimpleUploadedFile("design.shapr", b"data"))
+		self.assertIn("Editor model updated successfully.", message_texts(response))
+		self.project.refresh_from_db()
+		self.assertTrue(self.project.editor_model_url.startswith("editor_models/"))
+		self.assertTrue(self.project.editor_model_url.endswith(".shapr"))
+		# No editor name, so the page reads it back as a plain "editor file".
+		self.assertIsNone(self.project.editor_name)
+
+	def test_unlisted_extension_is_only_ever_in_the_picker_accept_list(self):
+		"""Selectable in the file dialog, named by no copy on the page."""
+		import re
+		self.project.editor_model_url = VALID_EDITOR_LINK
+		self.project.save()
+		html = self.client.get(
+			reverse("project_detail", args=[self.project.id])
+		).content.decode()
+		accept = re.search(r'name="editor_model_file"[^>]*accept="([^"]*)"', html).group(1)
+		self.assertIn(".shapr", accept)
+		self.assertEqual(len(re.findall("shapr", html, re.I)), 1)
+
+	def test_unlisted_extension_is_not_named_when_a_link_is_rejected(self):
+		response = self._update(editor_model_link="https://example.com/model")
+		self.assertFalse(any("shapr" in m.lower() for m in message_texts(response)))
+
+	def test_clear_on_someone_elses_project_404s(self):
+		other = make_project(make_user("other"), editor_model_url=VALID_EDITOR_LINK)
+		self.assertEqual(self._update(project=other, clear="1").status_code, 404)
+		other.refresh_from_db()
+		self.assertEqual(other.editor_model_url, VALID_EDITOR_LINK)
+
 
 @override_settings(ALLOW_JOURNALING=True)
 class UpdateProjectImageTests(BaseTestCase):

@@ -928,6 +928,52 @@ a.ink-btn {
     color: var(--ink);
 }
 
+/* The chosen filename can be far wider than the slip, and a file input won't
+   ellipsize it — so let the row scroll rather than push the slip open. */
+.slip input[type="file"] {
+    padding: 6px 10px;
+    overflow-x: auto;
+}
+
+/* The browser's own button is the one control in the slip that arrives
+   unstyled, which reads as a bug next to the paper the rest is drawn on. */
+.slip input[type="file"]::file-selector-button {
+    margin-right: 10px;
+    padding: 4px 14px 5px;
+    border: 2px solid var(--paper-edge);
+    border-radius: 999px;
+    background-color: var(--paper);
+    font: inherit;
+    font-size: 0.85em;
+    color: var(--ink);
+    cursor: pointer;
+}
+
+.slip input[type="file"]::file-selector-button:hover {
+    background-color: #FFFFFF;
+}
+
+.slip input[type="text"]:focus-visible,
+.slip input[type="url"]:focus-visible,
+.slip input[type="file"]:focus-visible,
+.slip textarea:focus-visible {
+    outline: 2px solid var(--ink-link);
+    outline-offset: 1px;
+}
+
+/* Sits under its field, so the label above it can stay short. */
+.slip-hint {
+    display: block;
+    margin-top: 4px;
+    font-size: clamp(13px, 1.05vw, 16px);
+    color: var(--ink-faint);
+}
+
+/* What the project already has, above the fields that would replace it. */
+.slip-note {
+    color: var(--ink-soft);
+}
+
 .slip textarea {
     min-height: 96px;
     resize: vertical;
@@ -936,9 +982,17 @@ a.ink-btn {
 .slip-actions {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 14px;
     justify-content: flex-end;
     margin-top: 14px;
+}
+
+/* A destructive action that isn't the point of the slip. Pushed to the far
+   side so Remove never sits next to Save, and ordered first so it keeps that
+   side once the row wraps on a narrow screen. */
+.slip-actions .is-aside {
+    margin-right: auto;
 }
 
 .slip-actions button {

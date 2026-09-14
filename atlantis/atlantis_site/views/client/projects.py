@@ -19,13 +19,13 @@ import logging
 import mimetypes
 
 from ...models import (
-    Project, Ship, Journal, Timelapse, ALLOWED_EDITORS, EDITOR_FILE_EXTENSIONS, EDITOR_ARCHIVE_EXTENSIONS, is_editor_model_file, detect_editor_from_link
+    Project, Ship, Journal, Timelapse, ALLOWED_EDITORS, EDITOR_FILE_EXTENSIONS, EDITOR_ARCHIVE_EXTENSIONS, UNLISTED_EDITOR_EXTENSIONS, LINKABLE_EDITORS, is_editor_model_file
 )
 from ... import activity, lapse, lookout
 from .lapse import account_for
 from .timelapse import _apply_session_payload
 from ..helpers import (
-    is_valid_printables_url, get_model_info, validate_file_size,
+    is_valid_printables_url, is_valid_editor_model_url, get_model_info, validate_file_size,
     sniff_image_extension, random_storage_key,
     notify_followers, rate_limit, tracked_minutes_for_journals, format_minutes,
     can_bypass_ship_requirements, ysws_block_reason, field_max_length, fit, too_long,
@@ -328,6 +328,21 @@ def update_editor_model(request, project_id):
     editor_model_file = request.FILES.get("editor_model_file")
     editor_model_link = request.POST.get("editor_model_link", "").strip()
 
+    # "Remove" is a second submit button on the same form, so it arrives with
+    # the file and link fields alongside it — it has to be read before them or
+    # a half-filled form would be taken as an edit instead.
+    if request.POST.get("clear"):
+        if not project.editor_model_url:
+            messages.error(request, "There is no editor model to remove.")
+            return redirect("project_detail", project_id=project_id)
+
+        # The stored object is left in the bucket: a rejected ship is reviewed
+        # against what was uploaded at the time, so the key stays readable.
+        project.editor_model_url = ""
+        project.save()
+        messages.success(request, "Editor model removed.")
+        return redirect("project_detail", project_id=project_id)
+
     if editor_model_file:
         if settings.ALLOW_JOURNALING:
             if not is_editor_model_file(editor_model_file.name):
@@ -354,8 +369,12 @@ def update_editor_model(request, project_id):
             messages.error(request, "Editor model link must be a valid URL.")
             return redirect("project_detail", project_id=project_id)
         
-        if not detect_editor_from_link(editor_model_link):
-            messages.error(request, f"Unsupported editor model link. Supported editors: {', '.join(ALLOWED_EDITORS)}.")
+        # The rule the admin form already uses: a share link from an editor we
+        # recognize, or a direct link to a source file. Matching share domains
+        # alone left Solidworks and FreeCAD users with no working link at all,
+        # under a message that named their editor as supported.
+        if not is_valid_editor_model_url(editor_model_link):
+            messages.error(request, f"Unsupported editor model link. Link a document on {' or '.join(LINKABLE_EDITORS)}, or link straight to a file ending in {', '.join([*EDITOR_FILE_EXTENSIONS, *sorted(EDITOR_ARCHIVE_EXTENSIONS)])}.")
             return redirect("project_detail", project_id=project_id)
 
         if too_long(editor_model_link, Project, "editor_model_url"):
@@ -600,7 +619,12 @@ def project_detail(request, project_id):
         "ship_disabled_reason": ship_disabled_reason,
         "printablesData": printablesData,
         "allowed_editors": ALLOWED_EDITORS,
-        "allowed_editor_extensions": ",".join([*EDITOR_FILE_EXTENSIONS, *sorted(EDITOR_ARCHIVE_EXTENSIONS)]),
+        # Feeds the file picker's accept list only, never any visible copy, so
+        # the unadvertised extensions can be selectable without being named.
+        "allowed_editor_extensions": ",".join([
+            *EDITOR_FILE_EXTENSIONS, *sorted(EDITOR_ARCHIVE_EXTENSIONS), *sorted(UNLISTED_EDITOR_EXTENSIONS)
+        ]),
+        "linkable_editors": LINKABLE_EDITORS,
         # Lapse — the way time is logged now.
         "lapse_account": lapse_account,
         "lapse_connected": lapse_connected,

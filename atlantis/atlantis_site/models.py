@@ -56,11 +56,25 @@ EDITOR_ARCHIVE_EXTENSIONS = {
 	".zip",
 }
 
+# Taken on upload without being advertised. These stay out of ALLOWED_EDITORS
+# and out of every string built from it, so no copy on the page names them;
+# they only reach the file picker's accept list, which is what makes the file
+# selectable at all. Like an archive, they map to no editor name.
+UNLISTED_EDITOR_EXTENSIONS = {
+	".shapr",
+}
+
 EDITOR_LINK_DOMAINS = {
 	"onshape.com": "Onshape",
 	"a360.co": "Fusion 360",
 	"autodesk360.com": "Fusion 360",
 }
+
+# The editors that hand out a share link at all. Solidworks and FreeCAD have no
+# such domain, so telling everyone to "paste a link" and then matching only
+# these would turn those two away with nowhere to go — the link field takes a
+# direct link to a source file as well, and this names who the domains are for.
+LINKABLE_EDITORS = sorted(set(EDITOR_LINK_DOMAINS.values()))
 
 def detect_editor_from_filename(filename):
 	ext = os.path.splitext(filename)[1].lower()
@@ -76,7 +90,9 @@ def is_editor_model_file(value):
 		return False
 	path = urlparse(value).path
 	ext = os.path.splitext(path)[1].lower()
-	return ext in EDITOR_ARCHIVE_EXTENSIONS or detect_editor_from_filename(path) is not None
+	if ext in EDITOR_ARCHIVE_EXTENSIONS or ext in UNLISTED_EDITOR_EXTENSIONS:
+		return True
+	return detect_editor_from_filename(path) is not None
 
 def detect_editor_from_link(url):
 	host = (urlparse(url).netloc or "").lower()
