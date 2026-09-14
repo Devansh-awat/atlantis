@@ -497,6 +497,18 @@ class LapsePickerTests(BaseTestCase):
 			payload = self._list().json()
 		self.assertEqual(payload["timelapses"][0]["state"], "attached")
 
+	def test_footage_a_deleted_book_let_go_of_is_pickable_again(self):
+		gone = make_project(self.user, title="Abandoned")
+		Timelapse.objects.create(
+			project=gone, owner=self.user, source=Timelapse.Source.LAPSE,
+			lapse_id="freed", tracked_seconds=60, status=Timelapse.Status.COMPLETE,
+		)
+		gone.deleted = True
+		gone.save()
+		with patch("atlantis_site.lapse.fetch_published_timelapses", return_value=[timelapse_payload("freed")]):
+			payload = self._list().json()
+		self.assertEqual(payload["timelapses"][0]["state"], "available")
+
 	def test_duration_is_shown_as_recorded_time_not_video_time(self):
 		"""7200 is two hours of work, not two hours of video."""
 		with patch("atlantis_site.lapse.fetch_published_timelapses", return_value=[timelapse_payload(duration=7200)]):
@@ -627,6 +639,23 @@ class CreateJournalFromLapseTests(BaseTestCase):
 		self.assertEqual(Journal.objects.count(), 1)
 		self.assertEqual(Timelapse.objects.count(), 1)
 		self.assertTrue(any("already taped into a lapse" in m for m in message_texts(response)))
+
+	def test_footage_a_deleted_book_let_go_of_can_be_taped_in_again(self):
+		self._create()
+		stranded = Timelapse.objects.get().pk
+
+		self.project.deleted = True
+		self.project.save()
+		self.project = make_project(self.user, title="Second attempt")
+
+		response = self._create()
+		self.assertEqual(response.status_code, 302)
+		row = Timelapse.objects.get()
+		self.assertEqual(row.project, self.project)
+		self.assertEqual(row.lapse_id, "tl-1")
+		# The row the deleted book wrote is what the unique constraint would
+		# have refused the new one over, so it is gone rather than orphaned.
+		self.assertNotEqual(row.pk, stranded)
 
 	def test_the_same_id_twice_in_one_submission_is_refused(self):
 		response = self._create(lapse_ids=("tl-1", "tl-1"))

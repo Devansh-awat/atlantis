@@ -261,10 +261,14 @@ def lapse_timelapses(request, project_id):
 		)
 
 	# Anything already taped in, anywhere — the same footage must not be paid
-	# for twice, and a lapse in another book counts.
+	# for twice, and a lapse in another book counts. A deleted book does not:
+	# deleting a project hands its footage back, and it can't have been paid
+	# for, because a project that has shipped can't be deleted.
 	attached_ids = set(
 		Timelapse.objects.filter(
-			owner=request.user, source=Timelapse.Source.LAPSE
+			owner=request.user,
+			source=Timelapse.Source.LAPSE,
+			project__deleted=False,
 		).exclude(lapse_id="").values_list("lapse_id", flat=True)
 	)
 

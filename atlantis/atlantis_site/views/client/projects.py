@@ -73,11 +73,35 @@ def _already_attached(user, lapse_ids):
     Across every book of theirs, not just this one: the same footage paid for
     twice is the thing the unique constraint on lapse_id exists to stop, and
     catching it here is what turns that into a sentence rather than a 500.
+
+    A deleted book doesn't count. Deleting a project gives its footage back —
+    the recording still exists on Lapse and the hours behind it were never
+    paid, because a project that has shipped can't be deleted at all.
     """
     return set(
         Timelapse.objects.filter(
-            owner=user, source=Timelapse.Source.LAPSE, lapse_id__in=lapse_ids
+            owner=user,
+            source=Timelapse.Source.LAPSE,
+            project__deleted=False,
+            lapse_id__in=lapse_ids,
         ).values_list("lapse_id", flat=True)
+    )
+
+
+def _released_lapse_rows(user, lapse_ids):
+    """The rows holding footage a deleted book let go of.
+
+    _already_attached stops treating these as taped in, but the row is still
+    there and the unique constraint on lapse_id is what the new attach would
+    fail on — so the old row goes when the footage is claimed again, rather
+    than at the delete. Leaving it until then is what lets an undeleted
+    project keep its hours: nothing is lost until somebody else wants it.
+    """
+    return Timelapse.objects.filter(
+        owner=user,
+        source=Timelapse.Source.LAPSE,
+        project__deleted=True,
+        lapse_id__in=lapse_ids,
     )
 
 
@@ -404,6 +428,14 @@ def delete_project(request, project_id):
     ).exists()
     if in_flight:
         messages.error(request, "You cannot delete a project while a ship is under review. Wait until it is finalized or rejected.")
+        return redirect("projects")
+
+    # A finalized ship has already been paid for, and deleting the project is
+    # what frees its footage to be taped in again (see _released_lapse_rows) —
+    # so a project that has shipped is never deletable, or the same hours could
+    # be claimed a second time.
+    if project.ships.filter(status=Ship.ShipStatus.FINALIZED).exists():
+        messages.error(request, "You cannot delete a project that has already been finalized..")
         return redirect("projects")
 
     project.deleted = True
@@ -787,6 +819,15 @@ def create_journal(request, project_id):
             attached = sorted(lookout_ids)
             if lookout_ids:
                 available.update(journal=journal)
+
+            # Footage a deleted book let go of is still held by the row that
+            # book wrote, and that row is what the unique constraint would
+            # refuse the new one over. Drop it here, where it's inside the
+            # same transaction as the write that takes its place.
+            if selected_lapses:
+                _released_lapse_rows(
+                    request.user, [item["id"] for item in selected_lapses]
+                ).delete()
 
             # A Lapse row is written at the attach: until now the timelapse was
             # nothing of ours, just a recording sitting in somebody's account.

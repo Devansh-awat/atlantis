@@ -177,14 +177,21 @@ class DeleteProjectTests(BaseTestCase):
 				project.refresh_from_db()
 				self.assertFalse(project.deleted)
 
-	def test_can_delete_with_finalized_or_rejected_ships(self):
-		for status in (Ship.ShipStatus.FINALIZED, Ship.ShipStatus.REJECTED):
-			with self.subTest(status=status):
-				project = make_project(self.user)
-				make_ship(project, status=status, journal_minutes=())
-				self._delete(project)
-				project.refresh_from_db()
-				self.assertTrue(project.deleted)
+	def test_can_delete_with_a_rejected_ship(self):
+		project = make_project(self.user)
+		make_ship(project, status=Ship.ShipStatus.REJECTED, journal_minutes=())
+		self._delete(project)
+		project.refresh_from_db()
+		self.assertTrue(project.deleted)
+
+	def test_cannot_delete_a_project_that_has_shipped(self):
+		"""Deleting frees the footage; a paid book must not be able to free its
+		own hours for a second payout."""
+		project = make_project(self.user)
+		make_ship(project, status=Ship.ShipStatus.FINALIZED, journal_minutes=())
+		self._delete(project)
+		project.refresh_from_db()
+		self.assertFalse(project.deleted)
 
 	def test_cannot_delete_other_users_project(self):
 		other_project = make_project(make_user("other"))
