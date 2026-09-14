@@ -203,6 +203,13 @@ class Profile(models.Model):
 	# explicit "View Address".
 	encrypted_hca_token = models.TextField(blank=True, default="")
 
+	# When we last saw this user make a request, written by the presence
+	# middleware (see presence.py) and read only by the metrics page. Coarse on
+	# purpose: that middleware writes at most once a minute per user, so this
+	# means "here within the last minute or so" rather than an exact moment.
+	# Null for anyone who has not loaded a page since presence tracking landed.
+	last_seen = models.DateTimeField(null=True, blank=True, db_index=True)
+
 	def __str__(self):
 		return self.user.username
 
@@ -263,6 +270,42 @@ class Profile(models.Model):
 	def primary_address_id(self):
 		address = self.get_address()
 		return address.get("id", "") if address else ""
+
+class ActiveDay(models.Model):
+	"""One row per user per day they were seen on the site.
+
+	Profile.last_seen answers "who is here right now" and "who was here today",
+	but it is a single timestamp: it cannot say how many people were around last
+	Tuesday. This is that history — one row per (user, day), written by the same
+	middleware and never updated afterwards — so a day's attendance is settled
+	once the day is over, and an average across a window is a count rather than
+	an estimate.
+
+	Days are UTC dates, the same dates every other window on the metrics page is
+	cut in. Rows are cheap (one per user per active day) and the unique
+	constraint is what makes the write idempotent: presence.py inserts with
+	ON CONFLICT DO NOTHING rather than reading first.
+	"""
+	user = models.ForeignKey(
+		settings.AUTH_USER_MODEL,
+		on_delete=models.CASCADE,
+		related_name="active_days"
+	)
+	day = models.DateField()
+
+	class Meta:
+		ordering = ["-day"]
+		indexes = [models.Index(fields=["day"])]
+		constraints = [
+			models.UniqueConstraint(
+				fields=["user", "day"],
+				name="active_day_once_per_user",
+			),
+		]
+
+	def __str__(self):
+		return f"{self.user_id} seen on {self.day}"
+
 
 # project/ship models
 class Project(models.Model):

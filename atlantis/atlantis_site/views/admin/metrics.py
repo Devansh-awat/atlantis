@@ -3,10 +3,12 @@ from datetime import timedelta
 from django.shortcuts import render
 from django.contrib.admin.views.decorators import staff_member_required
 from django.db.models import Count, Sum, Avg
+from django.db.models.functions import TruncDate
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 
 from ...models import (
+    ActiveDay,
     AuditLog,
     Profile,
     Project,
@@ -17,11 +19,13 @@ from ...models import (
     T3,
     Item,
     Order,
+    Timelapse,
     PAYOUT_MULTIPLIER_DEFAULT,
     detect_editor,
 )
 from ..helpers import (
     add_bars,
+    approved_minutes_for_journals,
     check_perms,
     display_name,
     format_minutes,
@@ -30,9 +34,44 @@ from ..helpers import (
     tracked_minutes_for_journals,
 )
 
+# How recently a user has to have been seen to count as here *now*. Presence is
+# written at most once a minute per user (see presence.py), so this is
+# comfortably wider than the staleness that introduces.
+ACTIVE_NOW_WINDOW = timedelta(minutes=5)
+
+# The window every "per day" average on this page is taken over, and the one
+# the 30-day totals are cut to.
+WINDOW_DAYS = 30
+
+# How many days the daily bar charts go back. Short enough that each bar is
+# still readable in a column of them.
+TREND_DAYS = 14
+
 
 def _pct(part, whole):
     return round(part / whole * 100, 1) if whole else 0.0
+
+
+def _hours(minutes):
+    """Minutes as the hours figure the stat cards are read in."""
+    return round((minutes or 0) / 60, 1)
+
+
+def _avg(total, count):
+    return round(total / count, 1) if count else 0.0
+
+
+def _daily_rows(counts, days, today, value=lambda n: n):
+    """One chart row per day in the window, oldest first, gaps filled with zero.
+
+    `counts` maps date -> raw number. Days nobody did anything on are absent
+    from any aggregate query, and a chart that simply skipped them would draw a
+    quiet week as a busy one.
+    """
+    return add_bars([
+        {"label": day.strftime("%b %-d"), "value": value(counts.get(day, 0))}
+        for day in (today - timedelta(days=offset) for offset in range(days - 1, -1, -1))
+    ])
 
 
 @staff_member_required
@@ -43,6 +82,118 @@ def metrics(request):
     last_7 = now - timedelta(days=7)
     last_30 = now - timedelta(days=30)
     last_24h = now - timedelta(hours=24)
+    today = timezone.localdate(now)
+    today_start = timezone.localtime(now).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    window_start_day = today - timedelta(days=WINDOW_DAYS - 1)
+    trend_start_day = today - timedelta(days=TREND_DAYS - 1)
+
+    # ---- who is here -----------------------------------------------------
+    # Presence only exists from the day the middleware shipped, so the DAU
+    # average is divided by the days actually on record rather than by a flat
+    # 30 — otherwise the first month reads as a collapse in traffic.
+    first_tracked_day = ActiveDay.objects.order_by("day").values_list("day", flat=True).first()
+    dau_start_day = max(window_start_day, first_tracked_day) if first_tracked_day else None
+    dau_days = (today - dau_start_day).days + 1 if dau_start_day else 0
+
+    window_days = ActiveDay.objects.filter(day__gte=window_start_day)
+    active_now = Profile.objects.filter(
+        last_seen__gte=now - ACTIVE_NOW_WINDOW
+    ).count()
+    active_today = ActiveDay.objects.filter(day=today).count()
+    user_days_in_window = window_days.count()
+    active_in_window = window_days.values("user").distinct().count()
+
+    total_users = User.objects.count()
+    signups_today = User.objects.filter(date_joined__gte=today_start).count()
+    signups_last_7 = User.objects.filter(date_joined__gte=last_7).count()
+    signups_last_30 = User.objects.filter(date_joined__gte=last_30).count()
+    first_signup = User.objects.order_by("date_joined").values_list("date_joined", flat=True).first()
+    signup_days = (today - timezone.localdate(first_signup)).days + 1 if first_signup else 0
+
+    dau_counts = {
+        row["day"]: row["n"]
+        for row in window_days.filter(day__gte=trend_start_day)
+        .values("day").annotate(n=Count("id"))
+    }
+    signup_counts = {
+        row["day"]: row["n"]
+        for row in User.objects.filter(date_joined__gte=today_start - timedelta(days=TREND_DAYS - 1))
+        .annotate(day=TruncDate("date_joined"))
+        .values("day").annotate(n=Count("id"))
+    }
+
+    activity_stats = {
+        "active_now": active_now,
+        "active_now_minutes": int(ACTIVE_NOW_WINDOW.total_seconds() // 60),
+        "active_today": active_today,
+        "avg_dau": _avg(user_days_in_window, dau_days),
+        "dau_days": dau_days,
+        "active_in_window": active_in_window,
+        "window_days": WINDOW_DAYS,
+        "total_users": total_users,
+        "signups_today": signups_today,
+        "signups_last_7": signups_last_7,
+        "signups_last_30": signups_last_30,
+        "avg_signups_window": _avg(signups_last_30, WINDOW_DAYS),
+        "avg_signups_all_time": _avg(total_users, signup_days),
+        "signup_days": signup_days,
+        "daily_active": _daily_rows(dau_counts, TREND_DAYS, today),
+        "daily_signups": _daily_rows(signup_counts, TREND_DAYS, today),
+    }
+
+    # ---- hours logged ----------------------------------------------------
+    # "Logged" is counted against the lapse the footage was attached to, not
+    # against when it was recorded: that is the moment the time entered the
+    # book and the moment it started costing a reviewer something.
+    journals_today = Journal.objects.filter(created_at__gte=today_start)
+    journals_window = Journal.objects.filter(created_at__gte=last_30)
+    pending_journals = Journal.objects.filter(timelapse_review__isnull=True)
+    reviewed_window = Journal.objects.filter(timelapse_review__reviewed_at__gte=last_30)
+
+    minutes_today = tracked_minutes_for_journals(journals_today)
+    minutes_window = tracked_minutes_for_journals(journals_window)
+    pending_minutes = tracked_minutes_for_journals(pending_journals)
+    approved_minutes_window = approved_minutes_for_journals(reviewed_window)
+
+    devlogs_today = journals_today.count()
+    devlogs_window = journals_window.count()
+    pending_devlogs = pending_journals.count()
+    # Builders, not users: whoever owns a project that got a lapse in the
+    # window. It is the denominator the per-person average only makes sense
+    # against — dividing by everyone who ever signed up would bury it.
+    builders_window = journals_window.values("project__owner").distinct().count()
+
+    hours_counts = {
+        row["day"]: row["seconds"]
+        for row in Timelapse.objects
+        .filter(journal__isnull=False, journal__created_at__gte=today_start - timedelta(days=TREND_DAYS - 1))
+        .annotate(day=TruncDate("journal__created_at"))
+        .values("day").annotate(seconds=Sum("tracked_seconds"))
+    }
+
+    hours_stats = {
+        "today": _hours(minutes_today),
+        "today_display": format_minutes(minutes_today),
+        "devlogs_today": devlogs_today,
+        "pending": _hours(pending_minutes),
+        "pending_devlogs": pending_devlogs,
+        "window": _hours(minutes_window),
+        "window_days": WINDOW_DAYS,
+        "devlogs_window": devlogs_window,
+        "approved_window": _hours(approved_minutes_window),
+        "avg_per_day": _avg(_hours(minutes_window), WINDOW_DAYS),
+        "avg_per_builder": _avg(_hours(minutes_window), builders_window),
+        "builders_window": builders_window,
+        "avg_per_devlog_display": format_minutes(
+            minutes_window / devlogs_window if devlogs_window else 0
+        ),
+        "avg_devlogs_per_day": _avg(devlogs_window, WINDOW_DAYS),
+        "daily_hours": _daily_rows(
+            hours_counts, TREND_DAYS, today, value=lambda seconds: round(seconds / 3600, 1)
+        ),
+    }
 
     total_projects = Project.objects.count()
     active_projects = Project.objects.filter(deleted=False).count()
@@ -234,12 +385,10 @@ def metrics(request):
         "top_fulfillers": top_fulfillers,
     }
 
-    total_users = User.objects.count()
     staff_users = User.objects.filter(is_staff=True).count()
     slack_linked = Profile.objects.exclude(slack_id="").count()
     layers_in_circulation = Profile.objects.aggregate(t=Sum("layers"))["t"] or 0
     avg_layers = Profile.objects.aggregate(a=Avg("layers"))["a"] or 0
-    users_last_7 = User.objects.filter(date_joined__gte=last_7).count()
 
     top_holders = add_bars([
         {"label": display_name(p.user), "value": p.layers}
@@ -251,7 +400,7 @@ def metrics(request):
         "total": total_users,
         "staff": staff_users,
         "slack_linked": slack_linked,
-        "last_7": users_last_7,
+        "last_7": signups_last_7,
         "layers_in_circulation": layers_in_circulation,
         "avg_layers": round(avg_layers, 1),
         "top_holders": top_holders,
@@ -272,6 +421,8 @@ def metrics(request):
 
     return render(request, "root/metrics.html", {
         "generated_at": now,
+        "activity": activity_stats,
+        "hours": hours_stats,
         "projects": projects_stats,
         "ships": ships_stats,
         "reviews": reviews_stats,

@@ -9,6 +9,105 @@
     <p class="metrics-generated">Generated {{ generated_at|date:"Y-m-d H:i" }}</p>
 
     <section class="metrics-section">
+        <h2>Activity</h2>
+        <div class="stat-grid">
+            <div class="stat-card good">
+                <div class="stat-value">{{ activity.active_now }}</div>
+                <div class="stat-label">Active now</div>
+                <div class="stat-sub">seen in last {{ activity.active_now_minutes }} min</div>
+            </div>
+            <div class="stat-card accent">
+                <div class="stat-value">{{ activity.active_today }}</div>
+                <div class="stat-label">Active today</div>
+                <div class="stat-sub">unique users today</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ activity.avg_dau }}</div>
+                <div class="stat-label">Avg DAU ({{ activity.window_days }}d)</div>
+                <div class="stat-sub">mean active per day{% if activity.dau_days %} across {{ activity.dau_days }} day{{ activity.dau_days|pluralize }} tracked{% endif %}</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ activity.active_in_window }}</div>
+                <div class="stat-label">Active in {{ activity.window_days }}d</div>
+                <div class="stat-sub">unique users in range</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ activity.total_users }}</div>
+                <div class="stat-label">Total users</div>
+                <div class="stat-sub">all signups</div>
+            </div>
+        </div>
+
+        <div class="stat-grid">
+            <div class="stat-card accent">
+                <div class="stat-value">{{ activity.signups_today }}</div>
+                <div class="stat-label">Signups today</div>
+                <div class="stat-sub">{{ activity.signups_last_7 }} in last 7 days</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ activity.avg_signups_window }}</div>
+                <div class="stat-label">Avg signups / day ({{ activity.window_days }}d)</div>
+                <div class="stat-sub">{{ activity.signups_last_30 }} in last {{ activity.window_days }} days</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ activity.avg_signups_all_time }}</div>
+                <div class="stat-label">Avg signups / day (all time)</div>
+                <div class="stat-sub">across {{ activity.signup_days }} day{{ activity.signup_days|pluralize }}</div>
+            </div>
+        </div>
+
+        <div class="chart-grid">
+            {% include "root/_metric_chart.html" with title="Daily active users" rows=activity.daily_active fill_class="good" empty="Nothing tracked yet" %}
+            {% include "root/_metric_chart.html" with title="Signups per day" rows=activity.daily_signups empty="No signups yet" %}
+        </div>
+    </section>
+
+    <section class="metrics-section">
+        <h2>Time logged</h2>
+        <div class="stat-grid">
+            <div class="stat-card accent">
+                <div class="stat-value">{{ hours.today }}h</div>
+                <div class="stat-label">Hours logged today</div>
+                <div class="stat-sub">{{ hours.devlogs_today }} lapse{{ hours.devlogs_today|pluralize }} &middot; {{ hours.today_display }}</div>
+            </div>
+            <div class="stat-card warn">
+                <div class="stat-value">{{ hours.pending }}h</div>
+                <div class="stat-label">Hours in pending queue</div>
+                <div class="stat-sub">{{ hours.pending_devlogs }} lapse{{ hours.pending_devlogs|pluralize }} awaiting timelapse review</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ hours.window }}h</div>
+                <div class="stat-label">Hours in {{ hours.window_days }}d</div>
+                <div class="stat-sub">{{ hours.devlogs_window }} lapse{{ hours.devlogs_window|pluralize }} logged</div>
+            </div>
+            <div class="stat-card good">
+                <div class="stat-value">{{ hours.approved_window }}h</div>
+                <div class="stat-label">Hours approved in {{ hours.window_days }}d</div>
+                <div class="stat-sub">reviewer-approved lapse time</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ hours.avg_per_day }}h</div>
+                <div class="stat-label">Avg / day</div>
+                <div class="stat-sub">mean across {{ hours.window_days }} days</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ hours.avg_per_builder }}h</div>
+                <div class="stat-label">Avg / builder</div>
+                <div class="stat-sub">per builder logging in {{ hours.window_days }}d ({{ hours.builders_window }})</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ hours.avg_per_devlog_display }}</div>
+                <div class="stat-label">Avg / lapse</div>
+                <div class="stat-sub">{{ hours.avg_devlogs_per_day }} lapses logged per day</div>
+            </div>
+        </div>
+
+        <div class="chart-grid">
+            {% include "root/_metric_chart.html" with title="Hours logged per day" rows=hours.daily_hours fill_class="warn" wide=True empty="Nothing logged yet" %}
+        </div>
+    </section>
+
+    <section class="metrics-section">
         <h2>Projects</h2>
         <div class="stat-grid">
             <div class="stat-card accent">
