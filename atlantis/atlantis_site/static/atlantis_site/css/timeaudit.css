@@ -182,9 +182,7 @@
 
 /* ---------- the scrolling column ---------- */
 
-/* Positioned so an entry's offsetTop is measured against the column it
-   scrolls in — that offset is how Shift+Enter works out which entry the
-   reviewer is looking at. */
+/* Positioned so an entry is laid out against the column it scrolls in. */
 .root-page .ta-scroll {
     position: relative;
     flex: 1 1 auto;

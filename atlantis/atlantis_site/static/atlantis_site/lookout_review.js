@@ -880,49 +880,108 @@
     }
 
     /*
-     * Shift+Enter: finish the entry you are looking at and move to the next
-     * one. The scroll column snaps, so "the entry you are looking at" is the
-     * child whose top is nearest the scroll position.
+     * Which child of a scrolling column is the one being looked at: the last
+     * one that has reached the top of it, since that is the one filling the
+     * view under it.
      */
-    function saveAndNext() {
+    function currentChild(scroller, children) {
+        var top = scroller.getBoundingClientRect().top;
+        var current = 0;
+        children.forEach(function (child, index) {
+            if (child.getBoundingClientRect().top - top <= 8) current = index;
+        });
+        return current;
+    }
+
+    /* Scroll one column to a child of it, without disturbing the columns it
+     * sits inside — scrollIntoView would move those too, and the entry column
+     * outside snaps. */
+    function scrollColumnTo(scroller, child) {
+        var delta = child.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+        scroller.scrollTo({ top: scroller.scrollTop + delta, behavior: 'smooth' });
+    }
+
+    /*
+     * Shift+Enter: finish the Lookout you are looking at and move to the next
+     * one. An entry with several Lookouts stacks them in a column of its own,
+     * so the step is per recording; it is only from the last Lookout of an
+     * entry that the outer column moves on to the next entry.
+     *
+     * The reviewer is usually typing a description when they press it, so the
+     * element the key arrived on says which recording they mean; failing that,
+     * it is whichever one the columns are scrolled to.
+     */
+    function saveAndNext(target) {
         var scroller = document.getElementById('ta-scroll');
         if (!scroller) return;
-        var children = Array.prototype.slice.call(scroller.children);
-        var top = scroller.scrollTop;
-        var current = 0;
-        var best = Infinity;
-        children.forEach(function (child, index) {
-            var distance = Math.abs(child.offsetTop - top);
-            if (distance < best) {
-                best = distance;
-                current = index;
-            }
-        });
+        var sections = Array.prototype.slice.call(scroller.children);
 
-        var section = children[current];
+        var section = target && target.closest ? target.closest('[data-entry]') : null;
+        var index = section ? sections.indexOf(section) : -1;
+        if (index < 0) {
+            index = currentChild(scroller, sections);
+            section = sections[index];
+        }
+
+        var entry = null;
         if (section && section.dataset.entryId) {
-            var entry = entries.filter(function (candidate) {
+            entry = entries.filter(function (candidate) {
                 return String(candidate.id) === section.dataset.entryId;
             })[0];
-            if (entry && entry.editable) {
-                entry.recordingIds.forEach(function (id) {
-                    var rec = recordings[id];
-                    if (!rec.saved && rec.description.trim()) saveRecording(rec);
-                });
-                // An entry that is finished folds itself away, unless it is the
-                // last one — there is nothing after it to make room for.
-                if (entryIsDone(entry) && section.dataset.last !== '1') {
-                    setExpanded(section, false);
+        }
+
+        if (entry && entry.editable) {
+            var column = section.querySelector('.ta-recordings');
+            var recEls = column
+                ? Array.prototype.slice.call(column.querySelectorAll('[data-recording]'))
+                : [];
+            var at = -1;
+            if (recEls.length) {
+                var here = target && target.closest ? target.closest('[data-recording]') : null;
+                at = here ? recEls.indexOf(here) : -1;
+                if (at < 0) at = currentChild(column, recEls);
+            }
+
+            if (at >= 0) {
+                var rec = recordings[recEls[at].dataset.recordingId];
+                if (rec && !rec.saved && rec.description.trim()) saveRecording(rec);
+
+                var nextRec = recEls[at + 1];
+                if (nextRec) {
+                    scrollColumnTo(column, nextRec);
+                    focusDescription(nextRec);
+                    return;
                 }
+            }
+
+            // An entry that is finished folds itself away, unless it is the
+            // last one — there is nothing after it to make room for.
+            if (entryIsDone(entry) && section.dataset.last !== '1') {
+                setExpanded(section, false);
             }
         }
 
-        var next = children[current + 1];
+        var next = sections[index + 1];
         if (next) {
             next.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            // Focus has to travel with the scroll: the next Shift+Enter reads
+            // the element it arrives on, and a cursor left behind in the entry
+            // above would send it back there.
+            focusDescription(next);
         } else {
             // Nothing below the last entry any more — the pass ends here.
             openFinal();
+        }
+    }
+
+    /* Put the cursor in a container's first description box, or out of the one
+     * it is in if there is nothing there to type in. */
+    function focusDescription(container) {
+        var box = container.querySelector('[data-description]');
+        if (box) {
+            box.focus({ preventScroll: true });
+        } else if (document.activeElement && document.activeElement.blur) {
+            document.activeElement.blur();
         }
     }
 
@@ -1009,7 +1068,7 @@
 
             if (event.key === 'Enter' && event.shiftKey) {
                 event.preventDefault();
-                saveAndNext();
+                saveAndNext(event.target);
                 return;
             }
 
