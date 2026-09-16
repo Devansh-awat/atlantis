@@ -62,11 +62,14 @@
 
     <div class="rv-verdicts">
         <button type="submit" name="approved" value="approved" class="rv-verdict rv-verdict-good"
-                data-mod-key="p" data-primary {% if ship.project.locked %}disabled title="Can't review a locked project."{% endif %}>
+                data-mod-key="p" data-primary
+                data-confirm="Approve this ship? It moves into the T2 queue and the shipper is pinged."
+                {% if ship.project.locked %}disabled title="Can't review a locked project."{% endif %}>
             Approve<kbd>&#8984;P</kbd>
         </button>
         <button type="submit" name="approved" value="denied" class="rv-verdict rv-verdict-bad"
                 data-mod-key="e" data-requires="#rv-feedback"
+                data-confirm="Reject this ship? The shipper is pinged with your feedback."
                 {% if ship.project.locked %}disabled title="Can't review a locked project."{% endif %}>
             Reject<kbd>&#8984;E</kbd>
         </button>
