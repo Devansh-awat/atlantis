@@ -37,7 +37,16 @@ scroll wants for itself. Same reasoning as the /users page.
                 {% endfor %}
             </ul>
 
-            <a class="guides-rail-back" href="{% url 'dashboard' %}">&larr; back to deck</a>
+            {% comment %}
+            The guides are readable signed out, so the way back depends on where
+            the reader came from: the deck if they have one, the landing page
+            otherwise.
+            {% endcomment %}
+            {% if user.is_authenticated %}
+                <a class="guides-rail-back" href="{% url 'dashboard' %}">&larr; back to deck</a>
+            {% else %}
+                <a class="guides-rail-back" href="{% url 'index' %}">&larr; back to shore</a>
+            {% endif %}
         </div>
     </nav>
 

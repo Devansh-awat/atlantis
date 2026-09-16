@@ -46,16 +46,23 @@ GUIDES = (
 GUIDE_SLUGS = frozenset(guide["slug"] for guide in GUIDES)
 
 
-@login_required
+def _guide_profile(request):
+    # The guides read the same whether or not anyone is signed in, so these two
+    # views are the public exception on this module. A logged-out reader has no
+    # profile and no deck to go back to; _guides_base.html handles both.
+    if request.user.is_authenticated:
+        return request.user.hackclub_profile
+    return None
+
+
 def guides(request):
     return render(request, "atlantis_site/guides.html", {
-        "profile": request.user.hackclub_profile,
+        "profile": _guide_profile(request),
         "guides_nav": GUIDES,
         "active_guide": None,
     })
 
 
-@login_required
 def guide_detail(request, slug):
     # Templates are picked from the registry rather than straight off the URL,
     # so a made-up slug is a 404 and never a template path to go hunting for.
@@ -63,7 +70,7 @@ def guide_detail(request, slug):
         raise Http404("No such guide")
 
     return render(request, f"atlantis_site/guides/{slug}.html", {
-        "profile": request.user.hackclub_profile,
+        "profile": _guide_profile(request),
         "guides_nav": GUIDES,
         "active_guide": slug,
     })
