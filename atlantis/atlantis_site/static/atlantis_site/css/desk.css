@@ -11,6 +11,12 @@
     --paper-edge: #DCC79C;
 
     --desk-pad: clamp(18px, 3vw, 52px);
+
+    /* One figure for every way out of a page, so the link sits the same
+       distance from the top of the window as from its side, and the same on
+       the book as on the shelves. The same clamp is in printer.css and
+       base.css, for the pages those dress. */
+    --back-inset: clamp(18px, 2.4vw, 40px);
 }
 
 body {
@@ -29,9 +35,15 @@ body {
 /* Sits in the corner, which the background leaves as bare wood, so it is
    cream with a shadow rather than the paper's brown ink. */
 #back-link {
+    display: inline-block;
     color: #E9D8B4;
     text-decoration: none;
     font-size: clamp(18px, 1.6vw, 28px);
+    /* Its own leading, not the font's: half-leading above the cap would put
+       the ink further down the window than --back-inset says, and by a
+       different amount on each page, since the pages do not all set the link
+       at the same size. */
+    line-height: 1;
     text-shadow: 0 1px 3px rgba(24, 13, 4, 0.55);
 }
 

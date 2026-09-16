@@ -42,7 +42,9 @@ textarea {
     position: relative;
     min-height: 100vh;
     min-height: 100dvh;
-    padding: clamp(14px, 1.8vw, 28px);
+    /* The book is centred on the desk rather than flowed into it, so this
+       padding does nothing but set the way out into its corner. */
+    padding: var(--back-inset);
 }
 
 #back-link {

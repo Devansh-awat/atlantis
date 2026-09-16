@@ -1,3 +1,10 @@
+/* One figure for every way out of a page, so the link sits the same distance
+   from the top of the window as from its side. The same clamp is in desk.css
+   and printer.css, for the pages those dress. */
+:root {
+    --back-inset: clamp(18px, 2.4vw, 40px);
+}
+
 body {
     margin: 0;
     font-family: "Prompt";

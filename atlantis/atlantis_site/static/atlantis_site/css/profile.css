@@ -25,11 +25,12 @@
 
 #back-link {
     display: inline-block;
-    margin: 24px 0 0 24px;
+    margin: var(--back-inset) 0 0 var(--back-inset);
     color: #FBEFD6;
     text-decoration: none;
     font-weight: 600;
     font-size: 16px;
+    line-height: 1;
     text-shadow: 0 1px 4px rgba(10, 40, 50, 0.55);
 }
 
@@ -276,10 +277,6 @@
            mobile Safari/Chrome, which is janky on a long activity feed.
            Absolute lets it scroll with the (taller) page instead. */
         position: absolute;
-    }
-
-    #back-link {
-        margin: 18px 0 0 18px;
     }
 
     .profile-page {
