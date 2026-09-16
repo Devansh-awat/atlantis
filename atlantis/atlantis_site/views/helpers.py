@@ -494,6 +494,8 @@ def get_model_info(model_id: str) -> dict:
     return data["data"]["print"]
 
 def send_slack_message(content, channel):
+    if settings.DEBUG:
+        content = f"[DEBUG/LOCAL DEV] {content}"
     try:
         slack_client.chat_postMessage(
             channel=channel,
