@@ -13,18 +13,61 @@
     <div id="backdrop" aria-hidden="true"></div>
 
     <div id="scene">
-        <img id="scene-bg" src="{% static 'atlantis_site/assets/img/dashboard/background.png' %}" alt="The bow of a boat at sea, carrying a treasure chest and a telescope.">
+        <img id="scene-bg" src="{% static 'atlantis_site/assets/img/dashboard/background.png' %}"
+             data-day-src="{% static 'atlantis_site/assets/img/dashboard/background.png' %}"
+             data-night-src="{% static 'atlantis_site/assets/img/dashboard/night/background_night.png' %}" alt="The bow of a boat at sea, carrying a treasure chest and a telescope.">
 
         <a class="item" id="item-chest" href="{% url 'shop' %}" aria-label="Shop">
             <span class="item-label-frame"><span class="item-label">shop</span></span>
         </a>
-        <img class="scene-art" id="chest-art" src="{% static 'atlantis_site/assets/img/dashboard/chest.png' %}" alt="">
+        <img class="scene-art" id="chest-art" src="{% static 'atlantis_site/assets/img/dashboard/chest.png' %}" alt=""
+             data-day-src="{% static 'atlantis_site/assets/img/dashboard/chest.png' %}"
+             data-night-src="{% static 'atlantis_site/assets/img/dashboard/night/chest_night.png' %}">
 
         <a class="item" id="item-telescope" href="{% url 'explore' %}" aria-label="Explore">
             <span class="item-label-frame"><span class="item-label">explore</span></span>
         </a>
-        <img class="scene-art" id="telescope-art" src="{% static 'atlantis_site/assets/img/dashboard/telescope.png' %}" alt="">
+        <img class="scene-art" id="telescope-art" src="{% static 'atlantis_site/assets/img/dashboard/telescope.png' %}" alt=""
+             data-day-src="{% static 'atlantis_site/assets/img/dashboard/telescope.png' %}"
+             data-night-src="{% static 'atlantis_site/assets/img/dashboard/night/telescope_night.png' %}">
     </div>
+
+    {% comment %}
+    The scene keeps the visitor's own hours. Only the browser knows what time it
+    is where they are — nothing server-side records a timezone — so the swap has
+    to happen here. Running inline, right after the art it touches, means the
+    night pieces are in place before the first paint rather than flickering in.
+    {% endcomment %}
+    <script>
+        (function () {
+            // Dusk and dawn, in minutes past the visitor's local midnight.
+            const NIGHTFALL = 19 * 60 + 30;
+            const DAYBREAK = 7 * 60 + 30;
+
+            const art = document.querySelectorAll('[data-day-src][data-night-src]');
+
+            function isNight() {
+                const now = new Date();
+                const minutes = now.getHours() * 60 + now.getMinutes();
+                // The window wraps around midnight, so either side of it counts.
+                return minutes >= NIGHTFALL || minutes < DAYBREAK;
+            }
+
+            function setHour() {
+                const night = isNight();
+                // #backdrop and the sea-blue behind the scene are CSS's to paint.
+                document.documentElement.toggleAttribute('data-night', night);
+                for (const img of art) {
+                    const want = night ? img.dataset.nightSrc : img.dataset.daySrc;
+                    if (img.getAttribute('src') !== want) img.setAttribute('src', want);
+                }
+            }
+
+            setHour();
+            // A dashboard left open on the desk should still turn in for the night.
+            setInterval(setHour, 30000);
+        })();
+    </script>
 
     <nav id="dock" aria-label="Ship's locker">
         <a class="item" id="item-scroll" href="{% url 'guides' %}" aria-label="Guides">

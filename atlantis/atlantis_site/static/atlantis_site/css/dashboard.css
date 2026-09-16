@@ -5,6 +5,16 @@ body {
     font-family: "Atlantis Hand", sans-serif;
 }
 
+/*
+ * After dark the dashboard runs on the night art, which the page swaps in from
+ * the visitor's own clock. Everything keyed off [data-night] here is the part
+ * that isn't an <img>: the open water either side of the scene, and the blurred
+ * backdrop that stands in for it on narrow screens.
+ */
+[data-night] body {
+    background-color: #041427;
+}
+
 #scene {
     position: fixed;
     left: 50%;
@@ -29,6 +39,10 @@ body {
         background: url('../assets/img/dashboard/background.png') center / cover;
         filter: blur(28px) brightness(0.8);
         scale: 1.1;
+    }
+
+    [data-night] #backdrop {
+        background-image: url('../assets/img/dashboard/night/background_night.png');
     }
 }
 
