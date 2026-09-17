@@ -9,7 +9,7 @@ from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from ..models import (
-    AuditLog, InternalComment, Journal, Timelapse, TimelapseRemoval,
+    AuditLog, InternalComment, Journal, T1, T2, Timelapse, TimelapseRemoval,
     PAYOUT_MULTIPLIER_DEFAULT, PEARLS_PER_HOUR, detect_editor, is_editor_model_file
 )
 from ..hca import (
@@ -194,34 +194,47 @@ def internal_comments_for_project(project):
     )
 
 def build_review_history(ship):
-    """Everything reviewers did to a ship, oldest first.
+    """Everything reviewers did to any ship of the project, oldest first.
+
+    Earlier ships are part of the story: a reviewer deciding on this ship
+    needs to see why the previous ones were returned or rejected.
 
     /root pages only: it carries internal notes the owner must never see.
     """
+    project = ship.project
     events = []
-    for t1 in ship.t1_reviews.all():
+    for t1 in T1.objects.filter(ship__project=project).select_related(
+        "reviewer", "reviewer__hackclub_profile"
+    ):
         events.append({
             "type": "t1",
             "label": "T1 Review",
             "review": t1,
             "actor": display_name(t1.reviewer),
+            "other_ship": t1.ship_id != ship.id,
+            "ship_id": t1.ship_id,
             "at": t1.reviewed_at,
         })
-    for t2 in ship.t2_reviews.all():
+    for t2 in T2.objects.filter(ship__project=project).select_related(
+        "reviewer", "reviewer__hackclub_profile"
+    ):
         events.append({
             "type": "t2",
             "label": "T2 Review",
             "review": t2,
             "actor": display_name(t2.reviewer),
+            "other_ship": t2.ship_id != ship.id,
+            "ship_id": t2.ship_id,
             "at": t2.reviewed_at,
         })
-    for comment in internal_comments_for_project(ship.project):
+    for comment in internal_comments_for_project(project):
         events.append({
             "type": "comment",
             "label": "Internal comment",
             "comment": comment,
             "actor": display_name(comment.author),
             "other_ship": comment.ship_id != ship.id,
+            "ship_id": comment.ship_id,
             "at": comment.created_at,
         })
     events.sort(key=lambda e: e["at"])

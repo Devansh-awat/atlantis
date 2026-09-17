@@ -700,7 +700,7 @@ class InternalCommentTests(BaseTestCase):
 
 		response = self.client.get(reverse("review_project", args=[reship.id]))
 		self.assertContains(response, "printables listing looks like a remix")
-		self.assertContains(response, f"left on ship #{self.ship.id}")
+		self.assertContains(response, f"on ship #{self.ship.id}")
 
 	def test_hidden_from_the_project_owner_and_explorers(self):
 		self._comment()

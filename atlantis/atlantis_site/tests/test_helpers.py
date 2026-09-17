@@ -307,9 +307,34 @@ class BuildReviewHistoryTests(TestCase):
 
 		self.assertEqual([e["other_ship"] for e in events], [True, False])
 
+	def test_reviews_of_earlier_ships_of_the_project_are_included(self):
+		earlier_ship = make_ship(self.project, journal_minutes=())
+		T1.objects.create(
+			ship=earlier_ship, reviewer=self.user, feedback="no", internal_notes="thin", approved=False
+		)
+		T2.objects.create(
+			ship=earlier_ship, reviewer=self.user, feedback="back to T1",
+			justification="needs work", decision=T2.Decision.RETURN_T1
+		)
+		T1.objects.create(
+			ship=self.ship, reviewer=self.user, feedback="ok", internal_notes="better", approved=True
+		)
+
+		events = build_review_history(self.ship)
+
+		self.assertEqual([e["type"] for e in events], ["t1", "t2", "t1"])
+		self.assertEqual([e["other_ship"] for e in events], [True, True, False])
+		self.assertEqual(
+			[e["ship_id"] for e in events],
+			[earlier_ship.id, earlier_ship.id, self.ship.id],
+		)
+
 	def test_other_projects_are_untouched(self):
 		other_ship = make_ship(make_project(self.user), journal_minutes=())
 		InternalComment.objects.create(ship=other_ship, author=self.user, text="elsewhere")
+		T1.objects.create(
+			ship=other_ship, reviewer=self.user, feedback="nope", internal_notes="no", approved=False
+		)
 		self.assertEqual(build_review_history(self.ship), [])
 
 

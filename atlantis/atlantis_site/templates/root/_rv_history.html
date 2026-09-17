@@ -44,7 +44,7 @@
                         {% endif %}
                         <span class="rv-history-byline">
                             {{ event.actor }} &middot; {{ event.at|date:"M j, Y, g:i a" }}
-                            {% if event.other_ship %}&middot; left on ship #{{ event.comment.ship_id }}{% endif %}
+                            {% if event.other_ship %}&middot; on ship #{{ event.ship_id }}{% endif %}
                         </span>
                     </div>
                     {% if event.type == "comment" %}
