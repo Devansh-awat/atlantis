@@ -89,6 +89,36 @@ def extract_birthdate(userinfo):
         return ""
 
 
+def extract_contact(userinfo):
+    """The (full name, email) HCA has on file for a user.
+
+    Both ride on the `name` and `email` scopes, and both are best-effort: a
+    claim HCA leaves out comes back as "" rather than None so a caller can put
+    the pair straight on a page. The name falls back to given_name/family_name
+    for an identity that carries the parts but no assembled `name`.
+    """
+    if not isinstance(userinfo, dict):
+        return "", ""
+
+    # Unlike the identity-specific claims, `name` and `email` are ordinary OIDC
+    # ones and can sit at the top level even when an `identity` object is
+    # present, so each is looked for in both places.
+    identity = userinfo.get("identity")
+    identity = identity if isinstance(identity, dict) else {}
+
+    def claim(key):
+        value = identity.get(key) or userinfo.get(key)
+        return value.strip() if isinstance(value, str) else ""
+
+    name = claim("name")
+    if not name:
+        name = " ".join(
+            part for part in (claim("given_name"), claim("family_name")) if part
+        )
+
+    return name, claim("email")
+
+
 def extract_verification(userinfo):
     """The (verification_status, ysws_eligible) pair HCA reports for a user.
 

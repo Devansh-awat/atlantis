@@ -820,6 +820,20 @@
     color: var(--oc-ink);
 }
 
+/* The buyer's name and email, drawn above the postal lines: same block, but
+   set apart so it reads as who the order is for rather than a stray line of
+   the address itself. */
+.root-page .address-box .address-contact {
+    font-weight: 600;
+    word-break: break-all;
+}
+
+.root-page .address-box .address-contact + :not(.address-contact) {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--oc-line-2);
+}
+
 @media (max-width: 900px) {
     .root-page.page {
         grid-template-columns: minmax(0, 1fr);

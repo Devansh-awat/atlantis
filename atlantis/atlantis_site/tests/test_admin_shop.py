@@ -2,8 +2,8 @@ from unittest.mock import patch
 
 from django.urls import reverse
 
-from .. import hca
-from ..hca import AddressUnavailable
+from ..hca import IdentityUnavailable
+from ..views.admin import shop as admin_shop
 from ..models import AuditLog, Item, Order, ShopCategory
 from .base import BaseTestCase, grant_perms, make_user, message_texts
 
@@ -17,6 +17,14 @@ ADDRESS = {
 	"postal_code": "05482",
 	"country": "US",
 	"primary": True,
+}
+
+# What HCA hands back for the buyer: the parcel's address plus the name and
+# email the fulfillment dash shows above it.
+USERINFO = {
+	"name": "Test Person",
+	"email": "test.person@example.com",
+	"addresses": [ADDRESS],
 }
 
 
@@ -437,7 +445,7 @@ class ViewOrderAddressTests(BaseTestCase):
 			self.client.get(reverse("view_order_address", args=[self.order.id])).status_code, 405
 		)
 
-	@patch.object(hca, "fetch_addresses", return_value=[ADDRESS])
+	@patch.object(admin_shop, "fetch_userinfo", return_value=USERINFO)
 	def test_returns_buyers_address_fetched_on_demand(self, mock_fetch):
 		response = self._view()
 		self.assertEqual(response.status_code, 200)
@@ -447,7 +455,26 @@ class ViewOrderAddressTests(BaseTestCase):
 		# Fetched with the buyer's credentials, not the fulfiller's.
 		self.assertEqual(mock_fetch.call_args.args[0].user, self.buyer)
 
-	@patch.object(hca, "fetch_addresses", return_value=[ADDRESS])
+	@patch.object(admin_shop, "fetch_userinfo", return_value=USERINFO)
+	def test_returns_buyers_name_and_email(self, mock_fetch):
+		self.assertEqual(self._view().json()["contact"], {
+			"name": "Test Person", "email": "test.person@example.com",
+		})
+
+	@patch.object(admin_shop, "fetch_userinfo", return_value={"addresses": [ADDRESS]})
+	def test_missing_contact_claims_come_back_empty(self, mock_fetch):
+		# A token issued without the name/email scopes still has to show the
+		# address rather than 500 on a claim that isn't there.
+		response = self._view()
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.json()["contact"], {"name": "", "email": ""})
+
+	@patch.object(admin_shop, "fetch_userinfo", return_value=USERINFO)
+	def test_address_and_contact_take_one_hca_call(self, mock_fetch):
+		self._view()
+		self.assertEqual(mock_fetch.call_count, 1)
+
+	@patch.object(admin_shop, "fetch_userinfo", return_value=USERINFO)
 	def test_viewing_an_address_is_audit_logged(self, mock_fetch):
 		self._view()
 		log = AuditLog.objects.get(action="view_order_address")
@@ -455,13 +482,13 @@ class ViewOrderAddressTests(BaseTestCase):
 		self.assertEqual(log.metadata["order_id"], self.order.id)
 		self.assertEqual(log.metadata["address_id"], "adr_1")
 
-	@patch.object(hca, "fetch_addresses", return_value=[])
+	@patch.object(admin_shop, "fetch_userinfo", return_value={"name": "Test Person"})
 	def test_buyer_without_an_address(self, mock_fetch):
 		response = self._view()
 		self.assertEqual(response.status_code, 404)
 		self.assertEqual(response.json()["error"], "no_address")
 
-	@patch.object(hca, "fetch_addresses", side_effect=AddressUnavailable("token expired"))
+	@patch.object(admin_shop, "fetch_userinfo", side_effect=IdentityUnavailable("token expired"))
 	def test_unavailable_identity_is_not_audit_logged(self, mock_fetch):
 		response = self._view()
 		self.assertEqual(response.status_code, 503)

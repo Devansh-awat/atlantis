@@ -3,7 +3,10 @@ from unittest.mock import patch
 from django.test import TestCase, override_settings
 
 from .. import hca
-from ..hca import AddressUnavailable, extract_addresses, fetch_addresses, storable_token
+from ..hca import (
+	AddressUnavailable, extract_addresses, extract_contact, fetch_addresses,
+	storable_token,
+)
 from .base import TEST_ENCRYPTION_KEY, make_user
 
 HCA_METADATA = {
@@ -114,6 +117,39 @@ class ExtractAddressesTests(TestCase):
 		for payload in (None, {}, "nope", {"address": {}}, {"addresses": ["a string"]}):
 			with self.subTest(payload=payload):
 				self.assertEqual(extract_addresses(payload), [])
+
+
+class ExtractContactTests(TestCase):
+	def test_reads_name_and_email(self):
+		self.assertEqual(
+			extract_contact({"name": "Test Person", "email": "test@example.com"}),
+			("Test Person", "test@example.com"),
+		)
+
+	def test_reads_claims_nested_under_identity(self):
+		self.assertEqual(
+			extract_contact({"identity": {"name": "Nested", "email": "n@example.com"}}),
+			("Nested", "n@example.com"),
+		)
+
+	def test_top_level_claims_survive_an_identity_object(self):
+		# `name` and `email` are ordinary OIDC claims and can sit outside the
+		# identity object that carries the addresses.
+		self.assertEqual(
+			extract_contact({"identity": {"addresses": []}, "email": "top@example.com"}),
+			("", "top@example.com"),
+		)
+
+	def test_name_falls_back_to_its_parts(self):
+		self.assertEqual(
+			extract_contact({"given_name": "Test", "family_name": "Person"})[0],
+			"Test Person",
+		)
+
+	def test_missing_or_malformed_gives_empty_strings(self):
+		for payload in (None, {}, "nope", {"name": 42, "email": None}):
+			with self.subTest(payload=payload):
+				self.assertEqual(extract_contact(payload), ("", ""))
 
 
 @override_settings(ADDRESS_ENCRYPTION_KEY=TEST_ENCRYPTION_KEY)
