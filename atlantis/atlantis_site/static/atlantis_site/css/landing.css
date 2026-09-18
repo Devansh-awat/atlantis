@@ -31,6 +31,7 @@ body {
 #layer-middleground {
     --scale: 1.10;
     background-image: url('../assets/img/landing/middleground.png');
+    transform: scale(var(--scale));
 }
 
 #layer-foreground {
@@ -101,18 +102,6 @@ body {
 #login-button:active {
     border-bottom-width: var(--border-thin);
     transform: translateY(calc(var(--border-thick) - var(--border-thin)));
-}
-
-#landing-sponsor {
-    position: absolute;
-    right: clamp(16px, 4vw, 48px);
-    bottom: clamp(14px, 3vh, 28px);
-    z-index: 3;
-    margin: 0;
-    font-family: "Atlantis Hand";
-    font-size: clamp(12px, 1.3vw, 20px);
-    color: rgba(229, 242, 252, 0.22);
-    pointer-events: none;
 }
 
 /* ---------- the sand-and-starfish band ---------- */

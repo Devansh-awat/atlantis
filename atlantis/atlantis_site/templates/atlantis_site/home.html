@@ -12,7 +12,7 @@
 <body>
     <div id="parallax" aria-hidden="true">
         <div class="parallax-layer" id="layer-background" data-depth="7"></div>
-        <div class="parallax-layer" id="layer-middleground" data-depth="18"></div>
+        <div class="parallax-layer" id="layer-middleground" data-depth="18" data-flip="0"></div>
     </div>
 
     <div class="content">
@@ -28,7 +28,6 @@
                 </form>
             </div>
 
-            <p id="landing-sponsor">sponsored by Mihir</p>
         </div>
 
         <div id="faq-transition" aria-hidden="true">
@@ -140,6 +139,7 @@
             const layers = Array.from(document.querySelectorAll(".parallax-layer")).map((el) => ({
                 el: el,
                 depth: parseFloat(el.dataset.depth),
+                flip: el.dataset.flip === "0" ? 1 : -1,
                 scale: parseFloat(getComputedStyle(el).getPropertyValue("--scale")),
                 travelX: 0,
                 travelY: 0,
@@ -169,7 +169,7 @@
                     const y = (-currentY * layer.travelY).toFixed(2);
                     layer.el.style.transform =
                         "translate3d(" + x + "px, " + y + "px, 0) " +
-                        "scale(" + -layer.scale + ", " + layer.scale + ")";
+                        "scale(" + layer.flip * layer.scale + ", " + layer.scale + ")";
                 }
 
                 if (Math.abs(targetX - currentX) < 0.0005 && Math.abs(targetY - currentY) < 0.0005) {

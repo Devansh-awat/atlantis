@@ -45,6 +45,8 @@ SLACK_TOKEN = os.environ["SLACK_TOKEN"]
 # can talk it over instead of the shipper getting a DM they can't reply to.
 REVIEW_CHECKPOINT_ID = os.environ.get("REVIEW_CHECKPOINT_ID", "")
 
+TEST_RUNNER = "atlantis.testrunner.AtlantisTestRunner"
+
 AIRTABLE_PAT = os.environ.get("AIRTABLE_PAT", "")
 AIRTABLE_BASE_ID = os.environ.get("AIRTABLE_BASE_ID", "")
 AIRTABLE_TABLE_ID = os.environ.get("AIRTABLE_TABLE_ID", "")
