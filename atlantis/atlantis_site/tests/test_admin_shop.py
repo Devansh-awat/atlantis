@@ -19,11 +19,12 @@ ADDRESS = {
 	"primary": True,
 }
 
-# What HCA hands back for the buyer: the parcel's address plus the name and
-# email the fulfillment dash shows above it.
+# What HCA hands back for the buyer: the parcel's address plus the name, email
+# and phone number the fulfillment dash shows above it.
 USERINFO = {
 	"name": "Test Person",
 	"email": "test.person@example.com",
+	"phone_number": "+15555550123",
 	"addresses": [ADDRESS],
 }
 
@@ -456,18 +457,30 @@ class ViewOrderAddressTests(BaseTestCase):
 		self.assertEqual(mock_fetch.call_args.args[0].user, self.buyer)
 
 	@patch.object(admin_shop, "fetch_userinfo", return_value=USERINFO)
-	def test_returns_buyers_name_and_email(self, mock_fetch):
+	def test_returns_buyers_name_email_and_phone(self, mock_fetch):
 		self.assertEqual(self._view().json()["contact"], {
-			"name": "Test Person", "email": "test.person@example.com",
+			"name": "Test Person",
+			"email": "test.person@example.com",
+			"phone": "+15555550123",
 		})
 
 	@patch.object(admin_shop, "fetch_userinfo", return_value={"addresses": [ADDRESS]})
 	def test_missing_contact_claims_come_back_empty(self, mock_fetch):
-		# A token issued without the name/email scopes still has to show the
-		# address rather than 500 on a claim that isn't there.
+		# A token issued without the name/email/phone scopes still has to show
+		# the address rather than 500 on a claim that isn't there.
 		response = self._view()
 		self.assertEqual(response.status_code, 200)
-		self.assertEqual(response.json()["contact"], {"name": "", "email": ""})
+		self.assertEqual(
+			response.json()["contact"], {"name": "", "email": "", "phone": ""}
+		)
+
+	@patch.object(
+		admin_shop,
+		"fetch_userinfo",
+		return_value={"addresses": [dict(ADDRESS, phone_number="+15555550100")]},
+	)
+	def test_phone_falls_back_to_the_ordered_address(self, mock_fetch):
+		self.assertEqual(self._view().json()["contact"]["phone"], "+15555550100")
 
 	@patch.object(admin_shop, "fetch_userinfo", return_value=USERINFO)
 	def test_address_and_contact_take_one_hca_call(self, mock_fetch):

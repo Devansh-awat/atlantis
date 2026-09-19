@@ -5,7 +5,7 @@ from authlib.integrations.django_client import OAuth
 from authlib.integrations.requests_client import OAuth2Session
 
 HCA_METADATA_URL = "https://auth.hackclub.com/.well-known/openid-configuration"
-HCA_SCOPE = "openid email name profile verification_status slack_id address birthdate"
+HCA_SCOPE = "openid email name profile verification_status slack_id address birthdate phone"
 USERINFO_TIMEOUT = 5
 
 STORED_TOKEN_FIELDS = ("access_token", "refresh_token", "token_type", "expires_at", "scope")
@@ -45,13 +45,15 @@ def storable_token(token):
     return {field: token[field] for field in STORED_TOKEN_FIELDS if token.get(field)}
 
 
-def extract_addresses(userinfo):
-    if not isinstance(userinfo, dict):
-        return []
-
+def identity_source(userinfo):
+    """Where HCA's identity-specific claims live in a userinfo response: some
+    tokens nest them under `identity`, others put them at the top level."""
     identity = userinfo.get("identity")
-    source = identity if isinstance(identity, dict) else userinfo
+    return identity if isinstance(identity, dict) else userinfo
 
+
+def raw_addresses(source):
+    """Every address dict in a userinfo source, exactly as HCA sent it."""
     raw = source.get("addresses")
     if isinstance(raw, dict):
         raw = [raw]
@@ -59,10 +61,16 @@ def extract_addresses(userinfo):
         single = source.get("address")
         raw = [single] if isinstance(single, dict) and single else []
 
+    return [address for address in raw if isinstance(address, dict)]
+
+
+def extract_addresses(userinfo):
+    if not isinstance(userinfo, dict):
+        return []
+
     return [
         {k: v for k, v in address.items() if k != "phone_number"}
-        for address in raw
-        if isinstance(address, dict)
+        for address in raw_addresses(identity_source(userinfo))
     ]
 
 
@@ -117,6 +125,34 @@ def extract_contact(userinfo):
         )
 
     return name, claim("email")
+
+
+def extract_phone(userinfo, address_id=None):
+    """The phone number HCA has on file for a user, or "" if it has none.
+
+    Rides on the `phone` scope, and is only ever read live — a number is never
+    stored on our side. HCA reports it as the ordinary OIDC `phone_number`
+    claim, but it also hangs one off each address, so an identity whose only
+    number was given while adding a shipping address still yields one: the
+    account-level claim wins, and address_id picks which address to fall back
+    to (the same one the parcel is going to).
+    """
+    if not isinstance(userinfo, dict):
+        return ""
+
+    def number(value):
+        return value.strip() if isinstance(value, str) else ""
+
+    source = identity_source(userinfo)
+
+    # Like `name` and `email`, `phone_number` is an ordinary OIDC claim and can
+    # sit at the top level even when an `identity` object is present.
+    phone = number(source.get("phone_number")) or number(userinfo.get("phone_number"))
+    if phone:
+        return phone
+
+    address = select_address(raw_addresses(source), address_id)
+    return number(address.get("phone_number")) if address else ""
 
 
 def extract_verification(userinfo):

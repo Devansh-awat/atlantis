@@ -10,8 +10,8 @@ from django.db.models import Exists, OuterRef
 from ...models import Profile, Item, Order, ShopCategory
 from ...crypto import format_address
 from ...hca import (
-    IdentityUnavailable, extract_addresses, extract_contact, fetch_userinfo,
-    select_address,
+    IdentityUnavailable, extract_addresses, extract_contact, extract_phone,
+    fetch_userinfo, select_address,
 )
 from ..helpers import check_perms, record_audit, send_slack_dm, is_valid_image_url, INT_FIELD_MAX, field_max_length, too_long
 
@@ -131,15 +131,16 @@ def update_order_status(request, order_id):
 def view_order_address(request, order_id):
     """Fetch and return the buyer's shipping address and contact details.
 
-    The address, full name and email are pulled live from HCA with the buyer's
-    stored token; access to a customer's plaintext address is audit-logged since
-    it is PII.
+    The address, full name, email and phone number are pulled live from HCA
+    with the buyer's stored token — none of it is stored on our side — and
+    access to a customer's plaintext address is audit-logged since it is PII.
     """
     order = get_object_or_404(Order.objects.select_related("owner"), id=order_id)
     profile = getattr(order.owner, "hackclub_profile", None)
 
-    # One userinfo call for all three: the address the parcel goes to and the
-    # name and email to reach the buyer at come out of the same response.
+    # One userinfo call for all of it: the address the parcel goes to and the
+    # name, email and phone to reach the buyer at come out of the same
+    # response.
     userinfo = {}
     if profile is not None:
         try:
@@ -153,6 +154,7 @@ def view_order_address(request, order_id):
         return JsonResponse({"ok": False, "error": "no_address"}, status=404)
 
     name, email = extract_contact(userinfo)
+    phone = extract_phone(userinfo, order.address_id)
 
     record_audit(request, "view_order_address", target=f"Order #{order.id}", metadata={
         "order_id": order.id,
@@ -163,7 +165,7 @@ def view_order_address(request, order_id):
     return JsonResponse({
         "ok": True,
         "address": address,
-        "contact": {"name": name, "email": email},
+        "contact": {"name": name, "email": email, "phone": phone},
     })
 
 

@@ -4,8 +4,8 @@ from django.test import TestCase, override_settings
 
 from .. import hca
 from ..hca import (
-	AddressUnavailable, extract_addresses, extract_contact, fetch_addresses,
-	storable_token,
+	AddressUnavailable, extract_addresses, extract_contact, extract_phone,
+	fetch_addresses, storable_token,
 )
 from .base import TEST_ENCRYPTION_KEY, make_user
 
@@ -150,6 +150,47 @@ class ExtractContactTests(TestCase):
 		for payload in (None, {}, "nope", {"name": 42, "email": None}):
 			with self.subTest(payload=payload):
 				self.assertEqual(extract_contact(payload), ("", ""))
+
+
+class ExtractPhoneTests(TestCase):
+	def test_reads_the_phone_number_claim(self):
+		self.assertEqual(extract_phone({"phone_number": "+15555550123"}), "+15555550123")
+
+	def test_reads_the_claim_nested_under_identity(self):
+		self.assertEqual(
+			extract_phone({"identity": {"phone_number": "+15555550123"}}), "+15555550123"
+		)
+
+	def test_top_level_claim_survives_an_identity_object(self):
+		self.assertEqual(
+			extract_phone({"identity": {"addresses": []}, "phone_number": "+1555"}), "+1555"
+		)
+
+	def test_falls_back_to_the_address_on_file(self):
+		# A number given while adding a shipping address, with no account-level
+		# claim on the token.
+		self.assertEqual(extract_phone({"addresses": [ADDRESS]}), "+15555550100")
+
+	def test_address_fallback_follows_the_order_s_address(self):
+		other = dict(ADDRESS, id="adr_2", primary=False, phone_number="+15555550199")
+		self.assertEqual(
+			extract_phone({"addresses": [ADDRESS, other]}, "adr_2"), "+15555550199"
+		)
+
+	def test_claim_wins_over_the_address(self):
+		self.assertEqual(
+			extract_phone({"phone_number": "+15555550123", "addresses": [ADDRESS]}),
+			"+15555550123",
+		)
+
+	def test_missing_or_malformed_gives_an_empty_string(self):
+		for payload in (None, {}, "nope", {"phone_number": 42}, {"phone_number": "  "}):
+			with self.subTest(payload=payload):
+				self.assertEqual(extract_phone(payload), "")
+
+	def test_scope_asks_for_the_claim(self):
+		# The claim has its own scope on HCA; `profile` does not carry it.
+		self.assertIn("phone", hca.HCA_SCOPE.split())
 
 
 @override_settings(ADDRESS_ENCRYPTION_KEY=TEST_ENCRYPTION_KEY)
