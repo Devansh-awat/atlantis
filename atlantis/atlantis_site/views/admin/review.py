@@ -68,9 +68,16 @@ def project_link(project):
     return f"<https://atlantis.hackclub.com/projects/{project.id}|{project.title}>"
 
 def feedback_line(feedback):
+    """
+    Slack's italics don't survive a line break, so feedback written as more
+    than one paragraph came out wrapped in literal underscores. Quote it
+    instead: `>>>` blockquotes everything after it, newlines and all, which
+    is why this has to be the last thing in the message.
+    """
+    feedback = (feedback or "").strip()
     if not feedback:
         return "They didn't leave any feedback."
-    return f"Here's what they said about it: _{feedback}_"
+    return f"Here's what they said about it:\n>>> {feedback}"
 
 def ping_review_checkpoint(ship, reviewer, tier, outcome, feedback):
     """
