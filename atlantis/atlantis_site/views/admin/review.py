@@ -13,7 +13,7 @@ from ...models import (
     PAYOUT_MULTIPLIER_STEP, PEARLS_PER_HOUR,
 )
 from ...submissions import build_override_justification, submit_ship
-from ..helpers import check_perms, send_slack_dm, send_slack_message, slack_mention, record_audit, get_model_info, layers_for_minutes, build_journal_timeline, reviewer_leaderboard, approved_minutes_for_journals, build_review_history, rate_limit, safe_redirect_back, INT_FIELD_MAX, INT_FIELD_MIN
+from ..helpers import check_perms, send_slack_dm, send_slack_message, slack_mention, record_audit, get_model_info, layers_for_minutes, build_journal_timeline, reviewer_leaderboard, approved_minutes_for_journals, build_review_history, payable_minutes_for_ship, rate_limit, safe_redirect_back, INT_FIELD_MAX, INT_FIELD_MIN
 from .queue import (
     QUEUES, annotate_recordings, dash_context, decorate_rows, go_to_next,
     journal_stats, owner_snapshot, parse_skip, preflight_checks, review_context,
@@ -244,10 +244,10 @@ def ysws_review_project(request, ship_id):
     ship = get_object_or_404(Ship, id=ship_id)
     journals = annotate_recordings(ship.project.journals.order_by('-id'))
     timeline = build_journal_timeline(journals, ship.project.ships.all())
-    # Ship-scoped, matching what t2_decision validates the deduction against —
-    # the sidebar's pearl preview has to agree with the ceiling the POST
-    # handler will enforce.
-    logged_time = approved_minutes_for_journals(ship.journals.all())
+    # The unpaid work this ship is answerable for, matching what t2_decision
+    # validates the deduction against — the sidebar's pearl preview has to
+    # agree with the ceiling the POST handler will enforce.
+    logged_time = payable_minutes_for_ship(ship)
     owner = owner_snapshot(ship.project.owner)
     subject = ship_snapshot(ship)
     return render(request, "root/ysws_review_project.html", {
@@ -293,9 +293,8 @@ def t2_decision(request, ship_id):
 
     with transaction.atomic():
         ship = get_object_or_404(Ship.objects.select_for_update(), id=ship_id)
-        journals = ship.journals.order_by("-id")
 
-        total_time = approved_minutes_for_journals(journals)
+        total_time = payable_minutes_for_ship(ship)
         if total_time < deductions:
             messages.error(request, f"Deduction too large. (total_time: {total_time}, deductions: {deductions})")
             return redirect("ysws_review_dash")
@@ -360,7 +359,7 @@ def fraud_review_project(request, ship_id):
     ship = get_object_or_404(Ship, id=ship_id)
     journals = annotate_recordings(ship.project.journals.order_by('-id'))
     timeline = build_journal_timeline(journals, ship.project.ships.all())
-    logged_time = approved_minutes_for_journals(ship.journals.all())
+    logged_time = payable_minutes_for_ship(ship)
 
     latest_t2 = ship.t2_reviews.order_by('-id').first()
     deductions = latest_t2.deductions if latest_t2 else 0

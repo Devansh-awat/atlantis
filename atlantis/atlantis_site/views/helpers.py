@@ -9,7 +9,7 @@ from django.shortcuts import redirect
 from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from ..models import (
-    AuditLog, InternalComment, Journal, T1, T2, Timelapse, TimelapseRemoval,
+    AuditLog, InternalComment, Journal, Ship, T1, T2, Timelapse, TimelapseRemoval,
     PAYOUT_MULTIPLIER_DEFAULT, PEARLS_PER_HOUR, detect_editor, is_editor_model_file
 )
 from ..hca import (
@@ -109,6 +109,38 @@ def approved_seconds_for_journals(journals):
 
 def approved_minutes_for_journals(journals):
     return approved_seconds_for_journals(journals) // 60
+
+def payable_journals_for_ship(ship):
+    """Every journal this ship's payout has to cover.
+
+    A journal stays attached to the ship it was shipped under, so a reship
+    carries only the entries written since the last one went out. That is the
+    right scope only when the last ship paid: a rejected ship pays nothing, and
+    scoping its successor to its own journals would drop every hour the
+    rejection covered — the first payout on a project would be for the last
+    few minutes of it.
+
+    So a payout covers the work logged since the last ship that actually paid:
+    this ship's journals, plus those of every ship after the most recent
+    finalized one. On a project that has never been finalized that is the whole
+    project; on an update it is only what the update added.
+    """
+    last_paid_id = (
+        ship.project.ships
+        .filter(status=Ship.ShipStatus.FINALIZED, id__lt=ship.id)
+        .order_by("-id")
+        .values_list("id", flat=True)
+        .first()
+    )
+    # Bounded above by this ship, which also leaves out the journals written
+    # since it went out: they belong to the next ship, not this payout.
+    journals = Journal.objects.filter(ship__project=ship.project, ship_id__lte=ship.id)
+    if last_paid_id is not None:
+        journals = journals.filter(ship_id__gt=last_paid_id)
+    return journals
+
+def payable_minutes_for_ship(ship):
+    return approved_minutes_for_journals(payable_journals_for_ship(ship))
 
 def timelapse_cleared_ships(ships):
     return ships.exclude(

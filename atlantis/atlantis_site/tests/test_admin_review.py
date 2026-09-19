@@ -521,6 +521,72 @@ class FraudReviewProjectTests(BaseTestCase):
 		self.assertEqual(response.context["total_time"], 0)
 
 
+class PayoutScopeTests(BaseTestCase):
+	"""Which journals a ship's payout covers.
+
+	Journals stay on the ship they went out under, so a reship holds only what
+	was logged after the last one. A rejected ship pays nothing, so its hours
+	are still owed and belong to whichever ship finally pays.
+	"""
+
+	def setUp(self):
+		super().setUp()
+		self.reviewer = grant_perms(make_user("rev"), "t2_review", "t3_review")
+		self.client.force_login(self.reviewer)
+		self.project = make_project(make_user("author"), shippable=True)
+
+	def _t2_page(self, ship):
+		return self.client.get(reverse("ysws_review_project", args=[ship.id]))
+
+	def _t3_page(self, ship):
+		return self.client.get(reverse("fraud_review_project", args=[ship.id]))
+
+	def test_rejected_ships_hours_carry_to_the_reship(self):
+		make_ship(self.project, status=Ship.ShipStatus.REJECTED, journal_minutes=(180,))
+		reship = make_ship(self.project, status=Ship.ShipStatus.T2_QUEUE, journal_minutes=(30,))
+		self.assertEqual(self._t2_page(reship).context["logged_time"], 210)
+
+		reship.status = Ship.ShipStatus.T3_QUEUE
+		reship.save()
+		self.assertEqual(self._t3_page(reship).context["logged_time"], 210)
+
+	def test_every_rejection_since_the_last_payout_carries(self):
+		for _ in range(2):
+			make_ship(self.project, status=Ship.ShipStatus.REJECTED, journal_minutes=(60,))
+		reship = make_ship(self.project, status=Ship.ShipStatus.T2_QUEUE, journal_minutes=(60,))
+		self.assertEqual(self._t2_page(reship).context["logged_time"], 180)
+
+	def test_finalized_ships_hours_are_not_paid_twice(self):
+		make_ship(self.project, status=Ship.ShipStatus.FINALIZED, journal_minutes=(180,))
+		update = make_ship(self.project, status=Ship.ShipStatus.T2_QUEUE, journal_minutes=(60,))
+		self.assertEqual(self._t2_page(update).context["logged_time"], 60)
+
+	def test_only_rejections_after_the_last_payout_carry(self):
+		make_ship(self.project, status=Ship.ShipStatus.REJECTED, journal_minutes=(90,))
+		make_ship(self.project, status=Ship.ShipStatus.FINALIZED, journal_minutes=(90,))
+		make_ship(self.project, status=Ship.ShipStatus.REJECTED, journal_minutes=(30,))
+		reship = make_ship(self.project, status=Ship.ShipStatus.T2_QUEUE, journal_minutes=(30,))
+		self.assertEqual(self._t2_page(reship).context["logged_time"], 60)
+
+	def test_unshipped_journals_are_not_paid_for(self):
+		ship = make_ship(self.project, status=Ship.ShipStatus.T2_QUEUE, journal_minutes=(60,))
+		approve_timelapse(make_journal(self.project, time_spent=120))
+		self.assertEqual(self._t2_page(ship).context["logged_time"], 60)
+
+	def test_deduction_ceiling_covers_the_carried_hours(self):
+		make_ship(self.project, status=Ship.ShipStatus.REJECTED, journal_minutes=(180,))
+		reship = make_ship(self.project, status=Ship.ShipStatus.T2_QUEUE, journal_minutes=(30,))
+
+		self.client.post(reverse("t2_decision", args=[reship.id]), {
+			"decision": T2.Decision.APPROVE, "deductions": "200",
+			"feedback": "good", "justification": "solid work",
+		})
+
+		reship.refresh_from_db()
+		self.assertEqual(reship.status, Ship.ShipStatus.T3_QUEUE)
+		self.assertEqual(T2.objects.get(ship=reship).deductions, 200)
+
+
 class ReviewPageEvidenceTests(BaseTestCase):
 	"""What the project review pages put in front of a reviewer."""
 
