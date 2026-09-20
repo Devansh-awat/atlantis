@@ -139,10 +139,8 @@
                             {% endif %}
                         {% else %}
                         {% if can_ship %}
-                            <form action="{% url 'ship_project' project.id %}" method="post">
-                                {% csrf_token %}
-                                <button type="submit" class="ink-btn ink-btn--strong">ship it</button>
-                            </form>
+                            {# the checklist comes first; the real post is in the slip #}
+                            <button type="button" class="ink-btn ink-btn--strong js-slip" data-slip="slip-ship">ship it</button>
                         {% else %}
                             {# a disabled button gets no pointer events, so the reason hangs on a wrapper #}
                             <span class="ship-gate" title="{{ ship_disabled_reason }}">
@@ -344,6 +342,36 @@
             </form>
         </div>
 
+        {% if can_ship %}
+        <div class="slip" id="slip-ship" hidden>
+            <h2>Before you ship</h2>
+            <p>Read each one and tick it off. A reviewer is about to check the same
+                list, so anything you skip here comes back as a rejection.</p>
+            <form action="{% url 'ship_project' project.id %}" method="post">
+                {% csrf_token %}
+                <ul class="slip-check">
+                    {% for item in ship_checklist %}
+                        <li>
+                            <label>
+                                {# required so the browser holds the line with JS off too #}
+                                <input type="checkbox" name="checklist" value="{{ item.key }}" required data-ship-check>
+                                <span>
+                                    <span class="slip-check-label">{{ item.label }}</span>
+                                    <span class="slip-check-detail">{{ item.detail }}</span>
+                                </span>
+                            </label>
+                        </li>
+                    {% endfor %}
+                </ul>
+                <p class="slip-check-count" id="ship-check-count"></p>
+                <div class="slip-actions">
+                    <button type="button" data-close>Not yet</button>
+                    <button type="submit" id="ship-submit">Ship it</button>
+                </div>
+            </form>
+        </div>
+        {% endif %}
+
         <div class="slip" id="slip-delete" hidden>
             <h2>Delete project</h2>
             <p>Are you sure you want to delete &ldquo;{{ project.title }}&rdquo;? This cannot be undone.</p>
@@ -523,6 +551,34 @@
             });
         })();
     </script>
+
+    {% if can_ship %}
+    <script>
+        // ---- the shipping checklist gates its own button ----
+        // Server-side too (ship_project refuses a post missing any of them);
+        // this is so the button says what it's waiting for rather than
+        // bouncing the ship after the fact.
+        (function () {
+            const boxes = Array.from(document.querySelectorAll('[data-ship-check]'));
+            const submit = document.getElementById('ship-submit');
+            const count = document.getElementById('ship-check-count');
+            if (!boxes.length || !submit) return;
+
+            function update() {
+                const left = boxes.filter((box) => !box.checked).length;
+                submit.disabled = left > 0;
+                if (!count) return;
+                count.textContent = left
+                    ? left + ' left to check off'
+                    : 'all checked — good to ship';
+                count.classList.toggle('is-done', !left);
+            }
+
+            boxes.forEach((box) => box.addEventListener('change', update));
+            update();
+        })();
+    </script>
+    {% endif %}
 
     {% if show_lookout %}
     <script src="{% static 'atlantis_site/lookout_recorder.js' %}"></script>

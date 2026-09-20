@@ -22,6 +22,7 @@ from ...models import (
     Project, Ship, Journal, Timelapse, ALLOWED_EDITORS, EDITOR_FILE_EXTENSIONS, EDITOR_ARCHIVE_EXTENSIONS, UNLISTED_EDITOR_EXTENSIONS, LINKABLE_EDITORS, is_editor_model_file
 )
 from ... import activity, lapse, lookout
+from ...checklists import SHIP_CHECKLIST, unticked, unticked_message
 from .lapse import account_for
 from .timelapse import _apply_session_payload
 from ..helpers import (
@@ -617,6 +618,7 @@ def project_detail(request, project_id):
         "time_spent": time_spent,
         "can_ship": can_ship,
         "ship_disabled_reason": ship_disabled_reason,
+        "ship_checklist": SHIP_CHECKLIST,
         "printablesData": printablesData,
         "allowed_editors": ALLOWED_EDITORS,
         # Feeds the file picker's accept list only, never any visible copy, so
@@ -963,6 +965,17 @@ def ship_project(request, project_id):
                 else "You must have at least 2 hours of logged time before you can ship!",
             )
             return redirect("projects")
+
+    # Last, so the boxes are only worth ticking once everything the server can
+    # check for itself has passed. The button on the book can't be pressed
+    # until all of them are ticked; this is the same gate for a post that
+    # didn't come from it.
+    missing = unticked(SHIP_CHECKLIST, request)
+    if missing:
+        messages.error(request, unticked_message(
+            missing, "Go through the shipping checklist first — still unchecked:"
+        ))
+        return redirect("project_detail", project_id=project_id)
 
     with transaction.atomic():
         ship = Ship.objects.create(

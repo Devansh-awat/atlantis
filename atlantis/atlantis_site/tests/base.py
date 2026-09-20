@@ -12,6 +12,7 @@ from django.utils import timezone
 from cryptography.fernet import Fernet
 from PIL import Image
 
+from ..checklists import FIELD as CHECKLIST_FIELD, SHIP_CHECKLIST, T1_CHECKLIST
 from ..models import (
 	Journal, Timelapse, Profile, Project, Ship, TimelapseRemoval,
 	TimelapseReview,
@@ -195,6 +196,24 @@ def make_ship(project, status=Ship.ShipStatus.T1_QUEUE, journal_minutes=(120, 12
 		if timelapse_approved:
 			approve_timelapse(journal)
 	return ship
+
+
+def ticked(checklist):
+	"""POST data with every box on `checklist` ticked.
+
+	Both checklists are refused unless all of them are, so almost every test
+	that ships or approves needs this; a test about the checklist itself sends
+	its own subset instead.
+	"""
+	return {CHECKLIST_FIELD: [item["key"] for item in checklist]}
+
+
+def ship_checklist():
+	return ticked(SHIP_CHECKLIST)
+
+
+def t1_checklist():
+	return ticked(T1_CHECKLIST)
 
 
 def image_upload(name="test.png", fmt="PNG", size=(4, 4)):

@@ -3,10 +3,12 @@ from decimal import Decimal
 from django.core.cache import cache
 from django.test import override_settings
 from django.urls import reverse
+from django.utils.html import escape
 
 from ..models import (
 	AuditLog, InternalComment, Ship, T1, T2, T3, TimelapseAnnotation,
 )
+from ..checklists import T1_CHECKLIST
 from .base import (
 	BaseTestCase,
 	approve_timelapse,
@@ -16,6 +18,7 @@ from .base import (
 	make_ship,
 	make_user,
 	message_texts,
+	t1_checklist,
 )
 
 
@@ -107,7 +110,10 @@ class T1DecisionTests(BaseTestCase):
 		self.ship = make_ship(self.project)
 
 	def _decide(self, ship=None, **overrides):
-		data = {"feedback": "nice", "internal_notes": "ok", "approved": "approved"}
+		data = {
+			"feedback": "nice", "internal_notes": "ok", "approved": "approved",
+			**t1_checklist(),
+		}
 		data.update(overrides)
 		data = {k: v for k, v in data.items() if v is not None}
 		ship = ship or self.ship
@@ -221,6 +227,83 @@ class T1DecisionTests(BaseTestCase):
 			{"feedback": "", "internal_notes": "", "approved": "approved"},
 		)
 		self.assertEqual(response.status_code, 404)
+
+
+class T1ChecklistTests(BaseTestCase):
+	"""The eight things a T1 reviewer has to confirm before an approval sticks.
+
+	The page disables Approve until they're ticked; this is the same gate for a
+	post that didn't come from the page.
+	"""
+
+	def setUp(self):
+		super().setUp()
+		self.reviewer = grant_perms(make_user("t1rev"), "t1_review")
+		self.client.force_login(self.reviewer)
+		self.project = make_project(make_user("author", slack_id="U0AUTHOR"), shippable=True)
+		self.ship = make_ship(self.project)
+
+	def _decide(self, **overrides):
+		data = {"feedback": "nice", "internal_notes": "ok", "approved": "approved"}
+		data.update(overrides)
+		return self.client.post(reverse("t1_decision", args=[self.ship.id]), data)
+
+	def test_approval_without_the_checklist_is_refused(self):
+		response = self._decide()
+		self.ship.refresh_from_db()
+		self.assertEqual(self.ship.status, Ship.ShipStatus.T1_QUEUE)
+		self.assertFalse(T1.objects.exists())
+		self.assertIn(
+			"Work through the review checklist before approving",
+			" ".join(message_texts(response)),
+		)
+
+	def test_a_half_ticked_checklist_is_refused_and_names_the_rest(self):
+		half = [item["key"] for item in T1_CHECKLIST[:4]]
+		response = self._decide(checklist=half)
+		self.assertFalse(T1.objects.exists())
+		text = " ".join(message_texts(response))
+		for item in T1_CHECKLIST[4:]:
+			self.assertIn(item["label"], text)
+
+	def test_an_unrecognised_tick_is_not_a_tick(self):
+		self._decide(checklist=["made_it_up"])
+		self.assertFalse(T1.objects.exists())
+
+	def test_a_full_checklist_approves(self):
+		self._decide(**t1_checklist())
+		self.ship.refresh_from_db()
+		self.assertEqual(self.ship.status, Ship.ShipStatus.T2_QUEUE)
+		self.assertTrue(T1.objects.get().approved)
+
+	def test_rejection_is_never_gated_by_it(self):
+		"""A rejection already says something is wrong."""
+		self._decide(approved="denied")
+		self.ship.refresh_from_db()
+		self.assertEqual(self.ship.status, Ship.ShipStatus.REJECTED)
+		self.assertFalse(T1.objects.get().approved)
+
+	def test_a_ship_out_of_the_queue_is_told_that_not_the_checklist(self):
+		"""The checklist is the last gate, so it never masks a real refusal."""
+		Ship.objects.filter(pk=self.ship.pk).update(status=Ship.ShipStatus.T2_QUEUE)
+		response = self._decide()
+		self.assertIn("ship not in T1 queue", message_texts(response))
+
+	def test_what_was_ticked_is_audited(self):
+		self._decide(**t1_checklist())
+		log = AuditLog.objects.get(action="t1_decision")
+		self.assertEqual(log.metadata["checklist"], [item["key"] for item in T1_CHECKLIST])
+
+	def test_a_rejection_audits_only_what_was_ticked(self):
+		self._decide(approved="denied", checklist=[T1_CHECKLIST[0]["key"], "made_it_up"])
+		log = AuditLog.objects.get(action="t1_decision")
+		self.assertEqual(log.metadata["checklist"], [T1_CHECKLIST[0]["key"]])
+
+	def test_the_checklist_is_on_the_review_page(self):
+		response = self.client.get(reverse("review_project", args=[self.ship.id]))
+		self.assertEqual(response.context["t1_checklist"], T1_CHECKLIST)
+		for item in T1_CHECKLIST:
+			self.assertContains(response, escape(item["label"]))
 
 
 class T2DecisionTests(BaseTestCase):
@@ -749,7 +832,7 @@ class InternalCommentTests(BaseTestCase):
 	def test_interleaved_with_review_actions_oldest_first(self):
 		self.client.post(
 			reverse("t1_decision", args=[self.ship.id]),
-			{"feedback": "nice", "internal_notes": "ok", "approved": "approved"},
+			{"feedback": "nice", "internal_notes": "ok", "approved": "approved", **t1_checklist()},
 		)
 		self._comment()
 

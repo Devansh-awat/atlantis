@@ -26,6 +26,7 @@ from .base import (
 	make_ship,
 	make_user,
 	message_texts,
+	t1_checklist,
 )
 
 
@@ -150,7 +151,7 @@ class DecisionAdvancesTests(BaseTestCase):
 	def _approve(self, ship, query=""):
 		return self.client.post(
 			reverse("t1_decision", args=[ship.id]) + query,
-			{"feedback": "nice", "internal_notes": "ok", "approved": "approved"},
+			{"feedback": "nice", "internal_notes": "ok", "approved": "approved", **t1_checklist()},
 		)
 
 	def test_decision_opens_the_next_ship(self):
@@ -438,7 +439,7 @@ class ClaimTests(BaseTestCase):
 		self.client.get(reverse("review_project", args=[ship.id]))
 		self.client.post(
 			reverse("t1_decision", args=[ship.id]),
-			{"feedback": "nice", "internal_notes": "ok", "approved": "approved"},
+			{"feedback": "nice", "internal_notes": "ok", "approved": "approved", **t1_checklist()},
 		)
 		self.assertIsNone(claim_holder("t1", ship.id))
 

@@ -134,6 +134,70 @@
         return true;
     }
 
+    /*
+     * The reviewer's checklist, and the verdict it holds shut.
+     *
+     * Same shape as firePrerequisite above and the same reason for existing:
+     * an approval from somebody who hasn't opened the files isn't a review.
+     * t1_decision refuses one server-side too — this is so the button says so
+     * before the round trip rather than after it.
+     *
+     * A verdict disabled for some other reason (a locked project) was
+     * disabled in the markup and stays that way; only the ones this function
+     * turned off carry the marker, and only those are ever turned back on.
+     */
+    function checklistHeld() {
+        return document.querySelector('[data-checklist-held="1"]');
+    }
+
+    function setupChecklist() {
+        var boxes = Array.prototype.slice.call(document.querySelectorAll('[data-checklist-box]'));
+        var gated = Array.prototype.slice.call(document.querySelectorAll('[data-needs-checklist]'));
+        var readout = document.querySelector('[data-checklist-count]');
+        if (!boxes.length || !gated.length) return;
+
+        // Anything already off at load is off for a reason of its own.
+        gated = gated.filter(function (button) { return !button.disabled; });
+        if (!gated.length) return;
+
+        function render() {
+            var left = boxes.filter(function (box) { return !box.checked; }).length;
+            gated.forEach(function (button) {
+                button.disabled = left > 0;
+                if (left > 0) {
+                    button.dataset.checklistHeld = '1';
+                    button.dataset.checklistLeft = String(left);
+                    button.title = left + ' checklist item' + (left === 1 ? '' : 's') + ' left to confirm.';
+                } else {
+                    delete button.dataset.checklistHeld;
+                    delete button.dataset.checklistLeft;
+                    button.removeAttribute('title');
+                }
+            });
+            if (readout) {
+                readout.textContent = left ? left + ' left' : 'all confirmed';
+                readout.classList.toggle('is-done', left === 0);
+            }
+        }
+
+        boxes.forEach(function (box) { box.addEventListener('change', render); });
+        render();
+    }
+
+    /*
+     * The shortcut lookups skip disabled buttons, so a held verdict would
+     * answer Cmd/Ctrl+P with nothing at all. Say what's holding it instead.
+     */
+    function fireChecklistGate(modKey) {
+        var button = checklistHeld();
+        if (!button) return false;
+        if (modKey && button.dataset.modKey !== modKey) return false;
+        var fieldset = document.querySelector('[data-checklist]');
+        if (fieldset) fieldset.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        toast('Work through the checklist first — ' + button.dataset.checklistLeft + ' left.', 'bad');
+        return true;
+    }
+
     function primaryButton() {
         // Anywhere on the page: the reviewer shell keeps its decision in an
         // .rv-form, the timelapse page keeps its submit in the sign-off panel
@@ -145,7 +209,7 @@
 
     function submitPrimary() {
         var button = primaryButton();
-        if (!button || !button.form) return false;
+        if (!button || !button.form) return fireChecklistGate(null);
         if (firePrerequisite(button)) return true;
         // requestSubmit, not submit(): it runs the form's own validation and
         // carries the button's name/value, which is what names the decision.
@@ -190,7 +254,9 @@
             if (decision) {
                 event.preventDefault();
                 if (!firePrerequisite(decision)) decision.click();
+                return;
             }
+            if (fireChecklistGate(modKey)) event.preventDefault();
             return;
         }
 
@@ -474,6 +540,7 @@
     function init() {
         setupCards();
         setupForms();
+        setupChecklist();
         setupCounters();
         setupNotes();
         setupCopy();

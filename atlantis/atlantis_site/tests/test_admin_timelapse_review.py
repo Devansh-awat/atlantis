@@ -20,6 +20,8 @@ from .base import (
 	make_timelapse,
 	make_user,
 	message_texts,
+	ship_checklist,
+	t1_checklist,
 )
 
 
@@ -742,6 +744,7 @@ class RegularQueueGatingTests(BaseTestCase):
 
 		self.client.post(reverse("t1_decision", args=[ship.id]), {
 			"feedback": "nice", "internal_notes": "ok", "approved": "approved",
+			**t1_checklist(),
 		})
 
 		ship.refresh_from_db()
@@ -760,6 +763,7 @@ class RegularQueueGatingTests(BaseTestCase):
 
 		self.client.post(reverse("t1_decision", args=[ship.id]), {
 			"feedback": "nice", "internal_notes": "ok", "approved": "approved",
+			**t1_checklist(),
 		})
 
 		ship.refresh_from_db()
@@ -776,7 +780,7 @@ class ShippingIsUnaffectedTests(BaseTestCase):
 	def test_can_ship_while_timelapse_review_is_pending(self):
 		make_journal(self.project, time_spent=200)
 
-		self.client.post(reverse("ship_project", args=[self.project.id]))
+		self.client.post(reverse("ship_project", args=[self.project.id]), ship_checklist())
 
 		self.assertEqual(self.project.ships.count(), 1)
 		self.assertEqual(self.project.ships.get().status, Ship.ShipStatus.T1_QUEUE)
@@ -787,7 +791,7 @@ class ShippingIsUnaffectedTests(BaseTestCase):
 		journal = make_journal(self.project, time_spent=200)
 		approve_timelapse(journal, removals=[(journal.timelapses.get(), 0, 3600, "afk")])
 
-		self.client.post(reverse("ship_project", args=[self.project.id]))
+		self.client.post(reverse("ship_project", args=[self.project.id]), ship_checklist())
 
 		self.assertEqual(self.project.ships.count(), 1)
 

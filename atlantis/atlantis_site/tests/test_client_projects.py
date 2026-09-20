@@ -3,9 +3,11 @@ from unittest.mock import patch
 from django.core.cache import cache
 from django.test import override_settings
 from django.urls import reverse
+from django.utils.html import escape
 
 from ..hca import IdentityUnavailable
 from ..models import Journal, Timelapse, Project, Ship
+from ..checklists import SHIP_CHECKLIST
 from .base import (
 	VALID_EDITOR_LINK,
 	VALID_PRINTABLES_URL,
@@ -19,6 +21,7 @@ from .base import (
 	make_timelapse,
 	make_user,
 	message_texts,
+	ship_checklist,
 	stl_upload,
 )
 
@@ -585,9 +588,12 @@ class ShipProjectTests(BaseTestCase):
 		self.project = make_project(self.user, shippable=True)
 		self.client.force_login(self.user)
 
-	def _ship(self, project=None):
+	def _ship(self, project=None, checklist=None):
 		project = project or self.project
-		return self.client.post(reverse("ship_project", args=[project.id]))
+		return self.client.post(
+			reverse("ship_project", args=[project.id]),
+			ship_checklist() if checklist is None else checklist,
+		)
 
 	def test_get_redirects_without_shipping(self):
 		make_journal(self.project, time_spent=200)
@@ -722,6 +728,72 @@ class ShipProjectTests(BaseTestCase):
 		self.assertEqual(old_journal.ship, old_ship)
 
 
+class ShipChecklistTests(BaseTestCase):
+	"""The checklist between the button and the ship.
+
+	The book won't let the button be pressed until every box is ticked, but the
+	button is not the only way to post — so the gate is the view's, and these
+	are about the view.
+	"""
+
+	def setUp(self):
+		super().setUp()
+		self.user = make_user("shipper")
+		self.project = make_project(self.user, shippable=True)
+		make_journal(self.project, time_spent=200)
+		self.client.force_login(self.user)
+
+	def _ship(self, data):
+		return self.client.post(reverse("ship_project", args=[self.project.id]), data)
+
+	def test_nothing_ticked_does_not_ship(self):
+		response = self._ship({})
+		self.assertEqual(Ship.objects.count(), 0)
+		self.assertIn(
+			"Go through the shipping checklist first",
+			" ".join(message_texts(response)),
+		)
+
+	def test_one_missing_box_does_not_ship(self):
+		data = ship_checklist()
+		dropped = data["checklist"].pop()
+		response = self._ship(data)
+		self.assertEqual(Ship.objects.count(), 0)
+		label = next(item["label"] for item in SHIP_CHECKLIST if item["key"] == dropped)
+		self.assertIn(label, " ".join(message_texts(response)))
+
+	def test_message_names_every_unticked_item(self):
+		text = " ".join(message_texts(self._ship({})))
+		for item in SHIP_CHECKLIST:
+			self.assertIn(item["label"], text)
+
+	def test_an_unrecognised_tick_is_not_a_tick(self):
+		response = self._ship({"checklist": ["made_it_up"]})
+		self.assertEqual(Ship.objects.count(), 0)
+		self.assertIn(
+			"Go through the shipping checklist first",
+			" ".join(message_texts(response)),
+		)
+
+	def test_every_box_ticked_ships(self):
+		self._ship(ship_checklist())
+		self.assertEqual(Ship.objects.count(), 1)
+
+	def test_the_checklist_is_on_the_project_page(self):
+		response = self.client.get(reverse("project_detail", args=[self.project.id]))
+		self.assertEqual(response.context["ship_checklist"], SHIP_CHECKLIST)
+		for item in SHIP_CHECKLIST:
+			self.assertContains(response, escape(item["label"]))
+
+	def test_a_project_that_cannot_ship_gets_no_checklist(self):
+		"""The slip posts the ship, so it only exists where the button is live."""
+		self.project.locked = True
+		self.project.save()
+		response = self.client.get(reverse("project_detail", args=[self.project.id]))
+		self.assertFalse(response.context["can_ship"])
+		self.assertNotContains(response, 'id="slip-ship"')
+
+
 class DebugOrganizerShipBypassTests(BaseTestCase):
 	"""Organizers running with DEBUG on may ship with no journals and no time.
 
@@ -735,9 +807,12 @@ class DebugOrganizerShipBypassTests(BaseTestCase):
 		self.project = make_project(self.organizer, shippable=True)
 		self.client.force_login(self.organizer)
 
-	def _ship(self, project=None):
+	def _ship(self, project=None, checklist=None):
 		project = project or self.project
-		return self.client.post(reverse("ship_project", args=[project.id]))
+		return self.client.post(
+			reverse("ship_project", args=[project.id]),
+			ship_checklist() if checklist is None else checklist,
+		)
 
 	@override_settings(DEBUG=True)
 	def test_organizer_ships_with_no_journals_or_time(self):
@@ -859,7 +934,9 @@ class YswsEligibilityGateTests(BaseTestCase):
 				user = self._login(status, eligible, username=f"gated-ship-{status}")
 				project = make_project(user, shippable=True)
 				make_journal(project, time_spent=200)
-				response = self.client.post(reverse("ship_project", args=[project.id]))
+				response = self.client.post(
+					reverse("ship_project", args=[project.id]), ship_checklist()
+				)
 				self.assertEqual(Ship.objects.count(), 0)
 				self.assertTrue(
 					any(fragment in text for text in message_texts(response)),
@@ -1271,7 +1348,7 @@ class FollowerNotificationTests(BaseTestCase):
 	@patch("atlantis_site.views.client.projects.notify_followers")
 	def test_ship_notifies_followers(self, mock_notify):
 		make_journal(self.project, time_spent=200)
-		self.client.post(reverse("ship_project", args=[self.project.id]))
+		self.client.post(reverse("ship_project", args=[self.project.id]), ship_checklist())
 		self.assertEqual(Ship.objects.count(), 1)
 		mock_notify.assert_called_once()
 		args = mock_notify.call_args.args

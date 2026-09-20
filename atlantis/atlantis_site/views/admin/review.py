@@ -12,6 +12,7 @@ from ...models import (
     PAYOUT_MULTIPLIER_DEFAULT, PAYOUT_MULTIPLIER_MAX, PAYOUT_MULTIPLIER_MIN,
     PAYOUT_MULTIPLIER_STEP, PEARLS_PER_HOUR,
 )
+from ...checklists import T1_CHECKLIST, ticked, unticked, unticked_message
 from ...submissions import build_override_justification, submit_ship
 from ..helpers import check_perms, send_slack_dm, send_slack_message, slack_mention, record_audit, get_model_info, layers_for_minutes, build_journal_timeline, reviewer_leaderboard, approved_minutes_for_journals, build_review_history, payable_minutes_for_ship, rate_limit, safe_redirect_back, INT_FIELD_MAX, INT_FIELD_MIN
 from .queue import (
@@ -166,6 +167,7 @@ def review_project(request, ship_id):
         "siblings": sibling_reviews(ship),
         "journal_stats": journal_stats(journals),
         "preflight": preflight_checks(ship, subject, owner, has_make=hasMake),
+        "t1_checklist": T1_CHECKLIST,
         **review_context(request, "t1", ship, claimable=ship.status == Ship.ShipStatus.T1_QUEUE),
     })
 
@@ -200,7 +202,19 @@ def t1_decision(request, ship_id):
             messages.error(request, TIMELAPSE_PENDING_MESSAGE)
             return redirect("review_dash")
 
+        # Only an approval is held to the checklist. A rejection is already a
+        # reviewer saying something is wrong, and making them tick eight boxes
+        # to say so would only teach them to tick eight boxes. Last of the
+        # gates, so a ship that was never reviewable here is told that rather
+        # than sent off to read a checklist about it.
         if approved:
+            missing = unticked(T1_CHECKLIST, request)
+            if missing:
+                messages.error(request, unticked_message(
+                    missing,
+                    "Work through the review checklist before approving — still unchecked:",
+                ))
+                return redirect("review_project", ship_id=ship_id)
             ship.status = Ship.ShipStatus.T2_QUEUE
         else:
             ship.status = Ship.ShipStatus.REJECTED
@@ -223,6 +237,11 @@ def t1_decision(request, ship_id):
         "project": ship.project.title,
         "approved": approved,
         "new_ship_status": ship.status,
+        # What the reviewer confirmed they looked at. On an approval this is
+        # the whole list by definition; it is recorded anyway so a ship that
+        # turns out to be bad can be traced back to a reviewer who said they
+        # checked, rather than to nothing at all.
+        "checklist": ticked(T1_CHECKLIST, request),
     })
 
     # Straight on to the next ship in the queue rather than back to the desk:
