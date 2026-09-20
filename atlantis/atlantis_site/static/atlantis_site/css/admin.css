@@ -149,6 +149,34 @@
     color: var(--oc-sidebar-strong);
 }
 
+/* A link that carries a pending count. Flex so the badge can sit against the
+   rail's right edge, where the five of them line up into a column a reviewer
+   reads at a glance instead of hunting for each number after its label. */
+.root-page .sidebar a.nav-counted {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.root-page .nav-badge {
+    margin-left: auto;
+    flex: none;
+    min-width: 20px;
+    padding: 0 6px;
+    box-sizing: border-box;
+    border: 1px solid var(--oc-line-2);
+    border-radius: 999px;
+    background: var(--oc-tide-soft);
+    color: var(--oc-tide-2);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 18px;
+    text-align: center;
+    /* Counts change under the reviewer as queues drain; tabular figures keep
+       the badge from resizing every time a 1 becomes a 4. */
+    font-variant-numeric: tabular-nums;
+}
+
 /* "back home" leaves for the public site — pin it away from the admin
    sections so it can't be mistaken for one of them. */
 .root-page .sidebar a:last-child {

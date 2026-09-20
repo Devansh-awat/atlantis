@@ -1,3 +1,4 @@
+{% load nav_badges %}
 <nav class="sidebar">
     <div class="sidebar-brand">
         <span class="sidebar-brand-name">Atlantis</span>
@@ -6,19 +7,19 @@
     <a href="/root/">home</a>
     {% if perms.atlantis_site.fulfillment or perms.atlantis_site.organizer %}
         <a href="/root/shop">shop management</a>
-        <a href="/root/fulfillment">fulfillment</a>
+        <a href="/root/fulfillment" class="nav-counted">fulfillment{% nav_badge 'fulfillment' %}</a>
     {% endif %}
     {% if perms.atlantis_site.t1_review or perms.atlantis_site.organizer or perms.atlantis_site.t2_review or perms.atlantis_site.t3_review %}
-        <a href="/root/review">T1 review</a>
+        <a href="/root/review" class="nav-counted">T1 review{% nav_badge 't1' %}</a>
     {% endif %}
     {% if perms.atlantis_site.t2_review or perms.atlantis_site.organizer or perms.atlantis_site.t3_review %}
-        <a href="/root/ysws_review">T2 review</a>
+        <a href="/root/ysws_review" class="nav-counted">T2 review{% nav_badge 't2' %}</a>
     {% endif %}
     {% if perms.atlantis_site.t3_review or perms.atlantis_site.organizer %}
-        <a href="/root/fraud_review">T3 review</a>
+        <a href="/root/fraud_review" class="nav-counted">T3 review{% nav_badge 't3' %}</a>
     {% endif %}
     {% if perms.atlantis_site.timelapse_review or perms.atlantis_site.organizer %}
-        <a href="/root/timelapse_review">timelapse review</a>
+        <a href="/root/timelapse_review" class="nav-counted">timelapse review{% nav_badge 'lookout' %}</a>
     {% endif %}
     {% if perms.atlantis_site.organizer %}
         <a href="/root/audit_log">audit log</a>
