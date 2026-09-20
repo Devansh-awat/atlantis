@@ -8,7 +8,7 @@ from django.core.cache import cache
 from django.urls import reverse
 from django.utils import timezone
 
-from ..models import ActiveDay, Profile
+from ..models import ActiveDay, Journal, Profile
 from ..presence import WRITE_EVERY, record_seen
 from .base import (
 	BaseTestCase,
@@ -222,9 +222,27 @@ class MetricsHoursTests(BaseTestCase):
 		self.assertEqual(hours["avg_per_devlog_display"], "3h 0m")
 		self.assertEqual(hours["daily_hours"][-1]["value"], 6.0)
 
+	def test_seven_day_average_ignores_older_lapses(self):
+		project = make_project(make_user("builder", slack_id="U1"))
+		make_journal(project, time_spent=420)
+		stale = make_journal(project, time_spent=600)
+		Journal.objects.filter(pk=stale.pk).update(
+			created_at=timezone.now() - timedelta(days=10)
+		)
+
+		hours = self._hours()
+
+		# The ten-day-old lapse is inside the 30-day window but outside the
+		# short one, so only the recent seven hours divide by seven.
+		self.assertEqual(hours["last_7"], 7.0)
+		self.assertEqual(hours["devlogs_last_7"], 1)
+		self.assertEqual(hours["avg_per_day_7"], 1.0)
+		self.assertEqual(hours["window"], 17.0)
+
 	def test_a_site_with_nothing_on_it_does_not_divide_by_zero(self):
 		hours = self._hours()
 
 		self.assertEqual(hours["today"], 0)
 		self.assertEqual(hours["avg_per_builder"], 0.0)
 		self.assertEqual(hours["avg_per_devlog_display"], "0h 0m")
+		self.assertEqual(hours["avg_per_day_7"], 0.0)

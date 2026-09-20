@@ -86,8 +86,13 @@
                 <div class="stat-sub">reviewer-approved lapse time</div>
             </div>
             <div class="stat-card">
+                <div class="stat-value">{{ hours.avg_per_day_7 }}h</div>
+                <div class="stat-label">Avg / day ({{ hours.short_window_days }}d)</div>
+                <div class="stat-sub">{{ hours.last_7 }}h across {{ hours.short_window_days }} days &middot; {{ hours.devlogs_last_7 }} lapse{{ hours.devlogs_last_7|pluralize }}</div>
+            </div>
+            <div class="stat-card">
                 <div class="stat-value">{{ hours.avg_per_day }}h</div>
-                <div class="stat-label">Avg / day</div>
+                <div class="stat-label">Avg / day ({{ hours.window_days }}d)</div>
                 <div class="stat-sub">mean across {{ hours.window_days }} days</div>
             </div>
             <div class="stat-card">

@@ -43,6 +43,10 @@ ACTIVE_NOW_WINDOW = timedelta(minutes=5)
 # the 30-day totals are cut to.
 WINDOW_DAYS = 30
 
+# The shorter window, for the averages that should react to this week rather
+# than to the trailing month.
+SHORT_WINDOW_DAYS = 7
+
 # How many days the daily bar charts go back. Short enough that each bar is
 # still readable in a column of them.
 TREND_DAYS = 14
@@ -149,16 +153,19 @@ def metrics(request):
     # book and the moment it started costing a reviewer something.
     journals_today = Journal.objects.filter(created_at__gte=today_start)
     journals_window = Journal.objects.filter(created_at__gte=last_30)
+    journals_last_7 = Journal.objects.filter(created_at__gte=last_7)
     pending_journals = Journal.objects.filter(timelapse_review__isnull=True)
     reviewed_window = Journal.objects.filter(timelapse_review__reviewed_at__gte=last_30)
 
     minutes_today = tracked_minutes_for_journals(journals_today)
     minutes_window = tracked_minutes_for_journals(journals_window)
+    minutes_last_7 = tracked_minutes_for_journals(journals_last_7)
     pending_minutes = tracked_minutes_for_journals(pending_journals)
     approved_minutes_window = approved_minutes_for_journals(reviewed_window)
 
     devlogs_today = journals_today.count()
     devlogs_window = journals_window.count()
+    devlogs_last_7 = journals_last_7.count()
     pending_devlogs = pending_journals.count()
     # Builders, not users: whoever owns a project that got a lapse in the
     # window. It is the denominator the per-person average only makes sense
@@ -184,6 +191,10 @@ def metrics(request):
         "devlogs_window": devlogs_window,
         "approved_window": _hours(approved_minutes_window),
         "avg_per_day": _avg(_hours(minutes_window), WINDOW_DAYS),
+        "avg_per_day_7": _avg(_hours(minutes_last_7), SHORT_WINDOW_DAYS),
+        "short_window_days": SHORT_WINDOW_DAYS,
+        "last_7": _hours(minutes_last_7),
+        "devlogs_last_7": devlogs_last_7,
         "avg_per_builder": _avg(_hours(minutes_window), builders_window),
         "builders_window": builders_window,
         "avg_per_devlog_display": format_minutes(
