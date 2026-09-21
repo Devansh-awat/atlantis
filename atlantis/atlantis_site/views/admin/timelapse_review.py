@@ -158,13 +158,33 @@ def _parse_removals(request, sessions):
             )
         if end <= start:
             raise RemovalError(f"Range {position} has to end after it starts.")
-        # The one guard that keeps an adjusted duration from going negative:
-        # you cannot remove footage the video doesn't have.
+        # You cannot remove footage the video doesn't have.
         if end > session.video_seconds:
             raise RemovalError(
                 f"Range {position} runs past the end of that recording's video "
                 f"({session.video_duration_display} long, "
                 f"{format_timecode(session.tracked_seconds)} tracked)."
+            )
+        # The video can outrun the time it was credited for: its length is
+        # measured off the file itself, while the tracked total is whatever
+        # the recorder reported, and the two disagree whenever a lapse was
+        # credited less time than it has frames. Clamping the end alone is
+        # what keeps the deduction inside the tracked time, so a range that
+        # begins at or past that point clamps into a range ending before it
+        # starts — which the database refuses outright rather than storing a
+        # negative deduction. A recording credited 0h0m is the whole of its
+        # own timeline that way: every range over it is past the end.
+        start_seconds = video_to_tracked(start)
+        # The last second of video can stand for a part-minute of tracking
+        # (a session's tracked time is whole minutes minus its first bucket),
+        # so the end is clamped rather than trusted to convert inside the
+        # session.
+        end_seconds = min(video_to_tracked(end), session.tracked_seconds)
+        if end_seconds <= start_seconds:
+            raise RemovalError(
+                f"Range {position} is past the end of the time that recording "
+                f"tracked ({format_timecode(session.tracked_seconds)}), so there "
+                "is nothing there to remove."
             )
         if not raw_reason:
             raise RemovalError(f"Range {position} needs a justification.")
@@ -176,12 +196,8 @@ def _parse_removals(request, sessions):
 
         removals.append(TimelapseRemoval(
             session=session,
-            start_seconds=video_to_tracked(start),
-            # The last second of video can stand for a part-minute of tracking
-            # (a session's tracked time is whole minutes minus its first
-            # bucket), so the end is clamped rather than trusted to convert
-            # inside the session.
-            end_seconds=min(video_to_tracked(end), session.tracked_seconds),
+            start_seconds=start_seconds,
+            end_seconds=end_seconds,
             reason=raw_reason,
         ))
         video_ranges.append((session.id, start, end))

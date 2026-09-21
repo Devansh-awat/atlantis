@@ -1173,7 +1173,9 @@ class TimelapseRemoval(models.Model):
 	is made of. The view converts what was typed on its way in, and
 	video_range_display converts back for anyone re-checking against the
 	player. Capping end_seconds at the session's tracked_seconds (enforced by
-	the view) is what keeps an adjusted duration from going negative.
+	the view) is what keeps an adjusted duration from going negative — along
+	with the view's refusal of a range that *starts* past the tracked time,
+	which the cap alone would turn into a range ending before it began.
 	"""
 	review = models.ForeignKey(
 		TimelapseReview,

@@ -646,6 +646,47 @@ class TimelapseRemovalValidationTests(BaseTestCase):
 		self.assertEqual(journal.removed_seconds, 9 * 60)
 		self.assertEqual(journal.approved_seconds, 0)
 
+	def test_a_cut_on_a_lapse_credited_no_time_is_refused(self):
+		"""A 0h0m lapse has footage and no time behind it, and 500'd the pass.
+
+		Lapse reports a `duration` of 0 for a recording it credited nothing to,
+		and the activity check still measures a real length off the compiled
+		video — so the editor drew a timeline the reviewer could draw a range
+		on, while the tracked time the end clamps to was zero. Every range over
+		one of those stored as ending before it started, which the removal's
+		own check constraint refused, and the reviewer got a 500 instead of a
+		sentence.
+		"""
+		journal = make_journal(self.project, time_spent=0)
+		session = make_timelapse(self.project, journal=journal, minutes=0)
+		session.measured_video_seconds = 12
+		session.save(update_fields=["measured_video_seconds"])
+
+		self.assertEqual(session.video_seconds, 12)
+		response = self._post([(session, "0:00", "0:12", "nothing on screen")])
+
+		self._assert_rejected(response, "is past the end of the time that recording tracked")
+		self.assertFalse(TimelapseRemoval.objects.exists())
+
+	def test_a_cut_starting_past_the_credited_time_is_refused(self):
+		"""The same fault wherever the video outruns what it was credited for.
+
+		9 minutes of tracking fills 9 seconds of video, but the measured file
+		runs 20 — so 0:12-0:20 is footage the reviewer can watch and time
+		nobody was paid for. Cutting inside the credited stretch still clamps
+		(see above); cutting wholly outside it has nothing to take.
+		"""
+		journal = make_journal(self.project, time_spent=0)
+		session = make_timelapse(self.project, journal=journal, minutes=0)
+		session.tracked_seconds = 9 * 60
+		session.measured_video_seconds = 20
+		session.save(update_fields=["tracked_seconds", "measured_video_seconds"])
+
+		response = self._post([(session, "0:12", "0:20", "unrelated browsing")])
+
+		self._assert_rejected(response, "is past the end of the time that recording tracked")
+		self.assertFalse(TimelapseRemoval.objects.exists())
+
 	def test_backwards_range_rejected(self):
 		response = self._post([(self.session, "30:00", "5:00", "afk")])
 		self._assert_rejected(response, "has to end after it starts")

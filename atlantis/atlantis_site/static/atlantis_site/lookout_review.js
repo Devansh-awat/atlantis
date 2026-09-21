@@ -744,6 +744,19 @@
             return fail('That range runs past the end of this Lookout (' +
                 formatTimecode(rec.videoSeconds) + ' of video).');
         }
+        /*
+         * The video can run longer than the time it was credited for, and
+         * only credited time can come off the shipper — so a cut is clamped
+         * to the tracked total, and one that begins at or past it has nothing
+         * left to take. A recording credited 0h0m is all of itself that way.
+         * The server refuses these as well; catching it here means the
+         * reviewer hears about it while they are still looking at the range.
+         */
+        if (videoToTracked(start) >= rec.trackedSeconds) {
+            return fail('That range is past the end of the time this recording ' +
+                'tracked (' + hoursDisplay(rec.trackedSeconds) + '), so there is ' +
+                'nothing there to remove.');
+        }
         if (!reason) return fail('Every removed range needs a reason.');
         if (overlaps(rec, start, end)) return fail('That range overlaps one already on this Lookout.');
 
