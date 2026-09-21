@@ -256,8 +256,31 @@ body {
     opacity: 0.92;
 }
 
-#hud-counters {
+/*
+ * The right corner is one column: pearls, the week's progress, then the staff
+ * link. Laid out by flow rather than by pinning each one at an offset, because
+ * the streak panel in the middle changes height with what it has to say.
+ */
+#hud-right {
+    position: fixed;
+    top: clamp(12px, 2.2vh, 34px);
     right: clamp(12px, 1.6vw, 34px);
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.4em;
+    width: min(340px, 34vw);
+    color: #FFFFFF;
+    text-shadow: 0 0.06em 0.25em rgba(0, 46, 79, 0.55);
+}
+
+.hud-row {
+    display: flex;
+    align-items: center;
+}
+
+#hud-counters {
     gap: clamp(4px, 0.5vw, 12px);
     font-size: clamp(22px, 2.5vw, 48px);
 }
@@ -276,11 +299,9 @@ body {
     width: 270.185%;
 }
 
-/* Sits under the pearl counter, in the same corner. Staff only, so it stays
-   quiet until it is pointed at. */
+/* Last in the right-hand column. Staff only, so it stays quiet until it is
+   pointed at. */
 #hud-admin {
-    right: clamp(12px, 1.6vw, 34px);
-    top: calc(clamp(12px, 2.2vh, 34px) + clamp(30px, 3.3vw, 64px) + 0.4em);
     padding: 0.05em 0.6em 0.15em;
     border-radius: 0.6em;
     background-color: rgba(0, 46, 79, 0.72);
@@ -296,3 +317,4 @@ body {
 #hud-admin:focus-visible {
     opacity: 1;
 }
+

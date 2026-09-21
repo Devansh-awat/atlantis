@@ -26,6 +26,71 @@
 
             <h1 class="chart-heading">{{ track.name }}</h1>
         </header>
+
+        {% comment %}
+        The chart is a plan for eight weeks and a purchase on exactly one day.
+        This strip says which of those you're looking at: how many of the forty
+        hours are banked, whether this is the track you've settled on, and —
+        once the program is over — the form that actually buys a printer.
+        {% endcomment %}
+        <section class="chart-claim{% if claim %} chart-claim-done{% endif %}">
+            {% if claim %}
+                <p class="chart-claim-line">
+                    You claimed <strong>{{ claim.printer_name }}</strong> for
+                    {{ claim.pearls_spent }} pearls. It's with fulfillment now.
+                </p>
+
+            {% else %}
+                <p class="chart-claim-line">
+                    <strong>{{ standing.printer_hours }}</strong> of
+                    {{ printer_hours_total }} printer hours banked.
+                    {% if standing.eliminated %}
+                        You're out of the program: a printer needs every week.
+                    {% elif not standing.printer_unlocked %}
+                        Nothing is spent until the end: pick a chart now, decide the
+                        printer later.
+                    {% endif %}
+                </p>
+
+                {% if not is_chosen_track %}
+                    <form method="post" action="{% url 'choose_printer_track' track.slug %}">
+                        {% csrf_token %}
+                        <button type="submit" class="chart-claim-btn">Make this my chart</button>
+                    </form>
+                {% else %}
+                    <p class="chart-claim-mine">This is your chart. You can still switch.</p>
+                {% endif %}
+
+                {% if claim_open %}
+                    {% comment %}
+                    One debit for the whole path: the printer picked here costs
+                    the track's entry pearls plus every upgrade between the
+                    opening printer and it, which is the figure on its star.
+                    {% endcomment %}
+                    <form method="post" action="{% url 'claim_printer' track.slug %}" class="chart-claim-form"
+                          data-confirm-claim>
+                        {% csrf_token %}
+                        <label>
+                            Claim
+                            <select name="printer" required>
+                                {% for printer in track.printers %}
+                                    <option value="{{ printer.name }}" data-pearls="{{ printer.pearls }}"
+                                            {% if not printer.affordable %}disabled{% endif %}>
+                                        {{ printer.name }} ({{ printer.pearls }} pearls, {{ printer.pace }})
+                                        {% if not printer.affordable %}(can't afford){% endif %}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <button type="submit" class="chart-claim-btn">Claim this printer</button>
+                        <p class="chart-claim-warn">
+                            You get one printer. This spends the pearls and can't be undone.
+                        </p>
+                    </form>
+                {% endif %}
+            {% endif %}
+        </section>
+
         <div class="chart-stage">
             <div id="chart">
                 <img id="chart-map"
@@ -35,16 +100,47 @@
                 {% for printer in track.printers %}
                     <div class="star" style="--x: {{ printer.x }}%; --y: {{ printer.y }}%"
                          tabindex="0" role="img"
-                         aria-label="{{ printer.name }}, {{ printer.cost }}">
+                         aria-label="{{ printer.name }}, {{ printer.cost }}, {{ printer.pace }} average">
                         <img src="{% static 'atlantis_site/assets/img/printer/star.png' %}" alt="">
                         <span class="star-tip" aria-hidden="true">
                             {{ printer.name }}
                             <span class="star-cost">{{ printer.cost }}</span>
+                            {% comment %}
+                            The pace estimate: a steady weekly hours figure that
+                            would land on this printer's pearl cost by the end of
+                            the season, assuming the required five plus the same
+                            few extra hours every week. Not a promise, a "roughly
+                            this much CAD a week" reading of the star.
+                            {% endcomment %}
+                            <span class="star-pace">{{ printer.pace }}</span>
                         </span>
                     </div>
                 {% endfor %}
             </div>
         </div>
     </div>
+
+    {% comment %}
+    A printer is one irreversible purchase, so the claim asks once more and
+    names what it is about to spend. Progressive: with no JavaScript the form
+    still submits, and the server is the thing that actually enforces the
+    hours, the pearls and the one-claim rule.
+    {% endcomment %}
+    <script>
+        (function () {
+            const form = document.querySelector('[data-confirm-claim]');
+            if (!form) return;
+
+            form.addEventListener('submit', function (event) {
+                const option = form.querySelector('select[name="printer"]').selectedOptions[0];
+                if (!option) return;
+                const ok = window.confirm(
+                    'Claim the ' + option.value + ' for ' + option.dataset.pearls + ' pearls?\n\n'
+                    + 'You get one printer and this cannot be undone.'
+                );
+                if (!ok) event.preventDefault();
+            });
+        })();
+    </script>
 </body>
 </html>

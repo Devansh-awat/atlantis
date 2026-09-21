@@ -96,6 +96,20 @@ LOOKOUT_APP_NAME = os.environ.get("LOOKOUT_APP_NAME", "Atlantis")
 # off retires the old recorder without stranding anything recorded on it.
 LOOKOUT_ALLOW_NEW = os.environ.get("LOOKOUT_ALLOW_NEW", "True") == "True"
 
+# The eight challenge weeks. Everything about when a week starts and ends is
+# derived from these three, so moving the program is a config change and not a
+# code one — see weeks.py, which is the only thing that reads them.
+#
+# The zone is the program's, not the server's: TIME_ZONE below stays UTC and
+# every stored timestamp stays UTC, but a week runs Monday 00:00 to Sunday
+# 23:59:59 *Eastern*, which is a different instant. Handing this an IANA name
+# rather than an offset is what keeps the boundaries at local midnight across
+# the DST change that falls inside week 6.
+CHALLENGE_TIMEZONE = os.environ.get("CHALLENGE_TIMEZONE", "America/New_York")
+# ISO date of the Monday week 1 opens on, at 00:00 in CHALLENGE_TIMEZONE.
+CHALLENGE_START_DATE = os.environ.get("CHALLENGE_START_DATE", "2026-09-21")
+CHALLENGE_WEEKS = int(os.environ.get("CHALLENGE_WEEKS", 8))
+
 STORAGES = {
     "default": {
         "BACKEND": "storages.backends.s3boto3.S3Boto3Storage",

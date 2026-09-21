@@ -129,12 +129,30 @@
     </div>
 
     <div class="rv-payout" data-payout="direct" data-multiplier="payout_multiplier"
-         data-logged="{{ total_time }}" data-pearls-per-hour="{{ pearls_per_hour }}">
+         data-logged="{{ total_time }}" data-pearls-per-hour="{{ pearls_per_hour }}"
+         data-payout-buckets="{{ payout_buckets }}">
         <div class="rv-payout-line">
             <span class="rv-payout-from" data-payout-in>{{ total_time }} min</span>
             <span class="rv-payout-arrow">&rarr;</span>
             <span class="rv-payout-to" data-payout-out>{{ base_layers }} pearls</span>
         </div>
+        {% if payout_lines %}
+            {% comment %}
+            An hour is worth three different things depending on when it was
+            recorded, so the total on its own is no longer something a reviewer
+            can check. This is the split it came from, at the multiplier's
+            resting position — the live figure above moves with the slider.
+            {% endcomment %}
+            <ul class="rv-payout-split">
+                {% for line in payout_lines %}
+                    <li>
+                        <span class="rv-payout-split-week">{{ line.label }}</span>
+                        <span class="rv-payout-split-time">{{ line.minutes }} min</span>
+                        <span class="rv-payout-split-rate">&times;{{ line.rate }}/hr</span>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
         <p class="rv-payout-note">Scales the pearls only. The hours sent to Airtable are unchanged.</p>
     </div>
 

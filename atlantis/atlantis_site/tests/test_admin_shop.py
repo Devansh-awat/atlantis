@@ -5,7 +5,7 @@ from django.urls import reverse
 from ..hca import IdentityUnavailable
 from ..views.admin import shop as admin_shop
 from ..models import AuditLog, Item, Order, ShopCategory
-from .base import BaseTestCase, grant_perms, make_user, message_texts
+from .base import BaseTestCase, grant_perms, make_user, message_texts, shop_items
 
 ADDRESS = {
 	"id": "adr_1",
@@ -147,7 +147,7 @@ class CreateItemTests(BaseTestCase):
 
 	def test_creates_item(self):
 		self._create()
-		item = Item.objects.get()
+		item = shop_items().get()
 		self.assertEqual(item.name, "Filament")
 		self.assertEqual(item.cost, 30)
 		self.assertEqual(item.category, "Materials")
@@ -155,7 +155,7 @@ class CreateItemTests(BaseTestCase):
 
 	def test_blank_category_defaults_to_other(self):
 		self._create(category="")
-		self.assertEqual(Item.objects.get().category, "Other")
+		self.assertEqual(shop_items().get().category, "Other")
 
 	def test_new_category_gets_a_slot_at_the_end(self):
 		ShopCategory.objects.create(name="Tools", sort_order=4)
@@ -178,30 +178,30 @@ class CreateItemTests(BaseTestCase):
 		for field in ("name", "description", "cost", "imageUrl"):
 			with self.subTest(field=field):
 				self._create(**{field: ""})
-				self.assertEqual(Item.objects.count(), 0)
+				self.assertEqual(shop_items().count(), 0)
 
 	def test_non_integer_cost_rejected(self):
 		self._create(cost="cheap")
-		self.assertEqual(Item.objects.count(), 0)
+		self.assertEqual(shop_items().count(), 0)
 
 	def test_invalid_image_url_rejected(self):
 		self.image_url_mocks["shop"].return_value = False
 		self._create()
-		self.assertEqual(Item.objects.count(), 0)
+		self.assertEqual(shop_items().count(), 0)
 
 	def test_stock_defaults_to_unlimited(self):
 		self._create()
-		self.assertEqual(Item.objects.get().stock, -1)
+		self.assertEqual(shop_items().get().stock, -1)
 
 	def test_stock_value_respected(self):
 		self._create(stock="5")
-		self.assertEqual(Item.objects.get().stock, 5)
+		self.assertEqual(shop_items().get().stock, 5)
 
 	def test_invalid_stock_rejected(self):
 		for value in ("abc", "-2", "1.5"):
 			with self.subTest(value=value):
 				self._create(stock=value)
-				self.assertEqual(Item.objects.count(), 0)
+				self.assertEqual(shop_items().count(), 0)
 
 
 class EditItemTests(BaseTestCase):

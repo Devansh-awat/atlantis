@@ -172,6 +172,39 @@ body::before {
     line-height: 1.25;
 }
 
+/*
+ * What a streak saver will actually do, on the card. Savers are the only thing
+ * in the shop that is spent rather than posted, so the week they land on has to
+ * be on the shelf and not just in the pop-up.
+ */
+.item-card-note {
+    margin: 2px 0 0;
+    color: #4A6A4A;
+    font-size: clamp(15px, 1.2vw, 20px);
+    line-height: 1.25;
+}
+
+.item-card-note-off {
+    color: #92281B;
+}
+
+/* Greyed out but still legible: the reason is the point of still showing it. */
+.item-card.unavailable {
+    background-color: #F6F1E4;
+}
+
+.item-card.unavailable .item-card-image,
+.item-card.unavailable .item-card-title,
+.item-card.unavailable .item-card-desc {
+    opacity: 0.55;
+}
+
+.order-saver-note {
+    margin: 10px 0 0;
+    color: #4A6A4A;
+    line-height: 1.35;
+}
+
 .item-card-foot {
     margin-top: auto;
     padding-top: clamp(8px, 0.9vw, 14px);

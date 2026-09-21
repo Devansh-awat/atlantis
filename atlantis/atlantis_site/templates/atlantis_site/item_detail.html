@@ -29,8 +29,11 @@
                 {% endif %}
             {% endif %}
 
-            {% if item.in_stock %}
-            <form action="{% url 'order_item' item.id %}" method="post" class="order-form">
+            {% if blocked_reason %}
+                <p class="item-detail-stock out-of-stock">{{ blocked_reason }}</p>
+            {% elif item.in_stock %}
+            <form action="{% url 'order_item' item.id %}" method="post" class="order-form"
+                  {% if item.is_saver %}data-confirm-saver="{{ saver_target }}"{% endif %}>
                 {% csrf_token %}
                 <label>
                     Quantity
@@ -42,15 +45,26 @@
                     <textarea name="user_notes" maxlength="100" placeholder="Optional order notes"></textarea>
                 </label>
 
-                <button type="submit">Order</button>
+                <button type="submit">{% if item.is_saver %}Apply{% else %}Order{% endif %}</button>
             </form>
 
+            {% if item.is_saver %}
+                {% comment %}
+                A saver is spent where it is bought — there is no queue and
+                nothing to post, so the address block would be a lie here.
+                {% endcomment %}
+                <p class="order-saver-note">
+                    Applied to {{ saver_target }} the moment you buy it. One saver
+                    covers one hour of that week's requirement.
+                </p>
+            {% else %}
             <div class="shipping-address">
                 <p class="shipping-address-hint">This order will be shipped to your Hack Club address.</p>
                 <button type="button" id="view-address-btn" class="link-button"
                         data-url="{% url 'view_own_address' %}">View Address</button>
                 <div id="address-box" class="address-box" hidden></div>
             </div>
+            {% endif %}
             {% else %}
                 <p>This item is currently out of stock. Check back later!</p>
             {% endif %}
@@ -60,6 +74,21 @@
 
 <script>
 (function () {
+    // Same last-chance prompt the shop's pop-up gives, for the page somebody
+    // lands on with JavaScript disabled in the pop-up or a direct link.
+    const saverForm = document.querySelector("[data-confirm-saver]");
+    if (saverForm) {
+        saverForm.addEventListener("submit", function (event) {
+            const qty = parseInt(saverForm.querySelector("[name=quantity]").value, 10) || 1;
+            const hours = qty === 1 ? "1 hour" : qty + " hours";
+            const ok = window.confirm(
+                "Apply " + hours + " to " + saverForm.dataset.confirmSaver + "?\n\n"
+                + "This happens straight away and can't be undone from here."
+            );
+            if (!ok) event.preventDefault();
+        });
+    }
+
     const btn = document.getElementById("view-address-btn");
     if (!btn) return;
     const box = document.getElementById("address-box");

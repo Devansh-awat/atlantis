@@ -14,7 +14,16 @@ entry pearls, which is what `tracks()` works out. What a printer *sells* for
 is deliberately absent: the cost a person is shown is only ever hours and
 pearls. The BYOP tiers are the exception, and not really one — the dollars in
 their names are the grant each tier hands you, not a price it charges.
+
+Alongside that cost, `tracks()` also works out a pace: the steady hours-a-week
+someone would need to CAD, every week of the season, to have exactly that many
+pearls banked by the end. See `_weekly_hours_estimate`.
 """
+
+from decimal import ROUND_CEILING, Decimal
+
+from . import weeks
+from .models import CHALLENGE_BASE_PEARLS_PER_HOUR, CHALLENGE_BONUS_PEARLS_PER_HOUR
 
 ENTRY_HOURS = 40
 
@@ -153,12 +162,60 @@ def _label(pearls):
     return f"{ENTRY_HOURS} hours"
 
 
+# A week of the minimum alone banks this many pearls: the required five hours,
+# paid at the base rate, and nowhere else. Free money in the sense that it
+# happens just by staying in the program — the season pays out
+# WEEKLY_BASELINE_PEARLS * weeks.week_count() of it to everyone who survives,
+# before a single bonus hour is worked.
+WEEKLY_BASELINE_PEARLS = weeks.WEEKLY_HOURS * CHALLENGE_BASE_PEARLS_PER_HOUR
+
+
+def _weekly_hours_estimate(pearls):
+    """The steady weekly pace a printer costing `pearls` works out to.
+
+    Assumes the same number of hours every week of the season: the required
+    five at the base rate, and the same handful more each week at the bonus
+    rate, landing on exactly `pearls` by the last week. That's a plan, not a
+    prediction — nobody's weeks are actually this even — but it is the only
+    single number that answers "about how much CAD a week does this take,"
+    which is what a person staring at a tree of stars actually wants to know.
+
+    A cost the required hours alone would cover over the season (everything up
+    to WEEKLY_BASELINE_PEARLS * weeks.week_count()) costs no extra time at all,
+    so the floor is always the required five.
+    """
+    season = weeks.week_count()
+    baseline_total = WEEKLY_BASELINE_PEARLS * season
+    extra_pearls = max(Decimal(pearls) - baseline_total, Decimal(0))
+    extra_hours_per_week = extra_pearls / (CHALLENGE_BONUS_PEARLS_PER_HOUR * season)
+    return weeks.WEEKLY_HOURS + extra_hours_per_week
+
+
+def _pace_label(pearls):
+    """"~8.6h/week" — the estimate, rounded up to a tenth of an hour.
+
+    A tenth rather than a whole hour because so many of these land just past a
+    round number (Bambu's A1 is 8.6, not 8 or 9) that rounding off would make
+    every printer on a track look like it costs the same pace as its neighbor.
+
+    Rounded up rather than to the nearest tenth: this is a pace to follow, not
+    a figure to audit, and the ordinary rounding a display number gets can
+    land exactly on a tenth's boundary and round it down — 11.25 becomes 11.2,
+    not 11.3, under the banker's rounding Decimal uses by default. Someone
+    doing exactly what the star tells them every week must end up with at
+    least as many pearls as it costs, never a hair short of it.
+    """
+    hours = _weekly_hours_estimate(pearls).quantize(Decimal("0.1"), rounding=ROUND_CEILING)
+    return f"~{hours}h/week"
+
+
 def tracks():
     """The tracks with every printer costed, ready for a template.
 
     Each printer gains `pearls` (the total, not the step), a `cost` string for
-    the hover label, and an `align` telling the overlay which way to hang that
-    label so it does not run off the edge of the map.
+    the hover label, a `pace` string estimating the weekly hours it takes, and
+    an `align` telling the overlay which way to hang that label so it does not
+    run off the edge of the map.
     """
     out = []
 
@@ -169,12 +226,18 @@ def tracks():
                 "name": name,
                 "pearls": totals[name],
                 "cost": _label(totals[name]),
+                "pace": _pace_label(totals[name]),
                 "x": x,
                 "y": y,
             }
             for name, _parent, _pearls, x, y in track["printers"]
         ]
-        out.append({**track, "printers": printers, "entry_cost": _label(track["entry_pearls"])})
+        out.append({
+            **track,
+            "printers": printers,
+            "entry_cost": _label(track["entry_pearls"]),
+            "entry_pace": _pace_label(track["entry_pearls"]),
+        })
 
     return out
 
@@ -182,3 +245,72 @@ def tracks():
 def track(slug):
     """One costed track by slug, or None if there is no such track."""
     return next((t for t in tracks() if t["slug"] == slug), None)
+
+
+def printer(slug, name):
+    """One costed printer by track and name, or None."""
+    chosen = track(slug)
+    if chosen is None:
+        return None
+    return next((p for p in chosen["printers"] if p["name"] == name), None)
+
+
+def item_key(slug, name):
+    """The stable key tying a shop Item row back to a printer on a tree."""
+    return f"{slug}:{name}"
+
+
+# Every printer needs a shop Item behind it, because a claim becomes an
+# ordinary Order and fulfillment already knows how to post one of those. These
+# rows are hidden from the shelves — Item.Kind.PRINTER is filtered out of the
+# shop — and exist only as that join.
+PRINTER_CATEGORY = "Printers"
+
+
+def sync_printer_items(Item=None):
+    """Make the hidden printer Items match the trees above. Returns counts.
+
+    Idempotent, and safe to run whenever printers.py changes: a printer that is
+    new gets a row, one whose price moved gets updated, and one that has been
+    taken off a tree is marked deleted rather than removed, because orders
+    already point at it.
+
+    `Item` is passed in by the data migration, which has to use the historical
+    model rather than the live one.
+    """
+    if Item is None:
+        from .models import Item
+
+    seen, created, updated = set(), 0, 0
+
+    for spec in tracks():
+        for entry in spec["printers"]:
+            key = item_key(spec["slug"], entry["name"])
+            seen.add(key)
+            fields = {
+                "name": entry["name"][:60],
+                "description": f"{spec['name']} · {entry['cost']}"[:500],
+                "cost": entry["pearls"],
+                "category": PRINTER_CATEGORY,
+                "kind": "printer",
+                "stock": -1,
+                "deleted": False,
+            }
+            row = Item.objects.filter(printer_key=key).first()
+            if row is None:
+                Item.objects.create(printer_key=key, **fields)
+                created += 1
+                continue
+            changed = [f for f, v in fields.items() if getattr(row, f) != v]
+            if changed:
+                for f, v in fields.items():
+                    setattr(row, f, v)
+                row.save(update_fields=changed)
+                updated += 1
+
+    retired = (
+        Item.objects.filter(kind="printer", deleted=False)
+        .exclude(printer_key__in=seen)
+        .update(deleted=True)
+    )
+    return {"created": created, "updated": updated, "retired": retired}

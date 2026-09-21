@@ -14,7 +14,21 @@ from django.utils import timezone
 # What an hour of approved work is worth before the T3 reviewer's multiplier.
 # Decimal, like everything else in the payout arithmetic: the rate is exact in
 # tenths and a binary float would put the rounding off by a hair.
+#
+# This is the *prep* rate, and it is only paid on work logged before the
+# challenge weeks opened. Once week 1 starts, an hour is worth one of the two
+# rates below depending on whether it lands inside that week's required five
+# hours or on top of them; see challenge.py, which does the splitting.
 PEARLS_PER_HOUR = Decimal("8")
+
+# Inside the weekly five: an hour that is *owed* rather than extra. It pays
+# little because it is already being paid for in printer hours — those five are
+# what fill the 40-hour bar.
+CHALLENGE_BASE_PEARLS_PER_HOUR = Decimal("1")
+
+# Every hour past the weekly five. Worth more than the prep rate: the required
+# hours are behind you and this is the only way to afford a better printer.
+CHALLENGE_BONUS_PEARLS_PER_HOUR = Decimal("7")
 
 # The T3 reviewer's pearl multiplier, a Decimal in tenths so the slider's
 # positions and the payout arithmetic stay exact — payouts are already in
@@ -209,6 +223,12 @@ class Profile(models.Model):
 	# means "here within the last minute or so" rather than an exact moment.
 	# Null for anyone who has not loaded a page since presence tracking landed.
 	last_seen = models.DateTimeField(null=True, blank=True, db_index=True)
+
+	# Which manufacturer's tech tree this user is working towards, as a slug
+	# from printers.py, or "" for undecided. Free to change right up until the
+	# claim at the end of the program, because nothing is spent before then:
+	# the tree is a plan, and the one debit that pays for it happens once.
+	printer_track = models.CharField(max_length=32, blank=True, default="")
 
 	def __str__(self):
 		return self.user.username
@@ -447,6 +467,15 @@ class T3(models.Model):
 
 	payout_time = models.IntegerField()
 	airtable_time = models.IntegerField()
+
+	# The pearls this decision actually credited. Stored rather than worked out
+	# again later, because it no longer can be: what an hour pays depends on
+	# which week it was recorded in and on how much of that week's cheap-rate
+	# allowance earlier ships had already spent, so payout_time and the
+	# multiplier are no longer enough to rebuild the figure. Null on rows
+	# written before the split existed, where the flat rate still reconstructs
+	# it exactly.
+	payout_layers = models.IntegerField(null=True, blank=True)
 
 	# Scales the pearls paid when the ship is finalized, and nothing else:
 	# payout_time and airtable_time record how long the work actually took,
@@ -1235,6 +1264,162 @@ class TimelapseRemoval(models.Model):
 
 
 # shop models
+# challenge models
+class WeekOutcome(models.Model):
+	"""What happened to one user in one challenge week, once the week is over.
+
+	A row is the *record* of a closed week, not the source of truth for it.
+	Whether a week was met is recomputed from live data on every read (see
+	challenge.py): savers bought after the fact change the answer, and a row
+	written at close would otherwise go stale the moment someone revived.
+
+	What the row is actually for is the three things that can't be derived:
+	`notified_at`, so the elimination DM goes out exactly once however many
+	times the closer runs; `override`, so an organizer can rule on a week by
+	hand; and `real_minutes`, a snapshot of the tracked time as it stood at
+	close, kept for the admin history because live time can still move
+	afterwards.
+	"""
+
+	class Override(models.TextChoices):
+		NONE = "", "No override"
+		PASS = "P", "Forced pass"
+		FAIL = "F", "Forced fail"
+
+	user = models.ForeignKey(
+		settings.AUTH_USER_MODEL,
+		on_delete=models.CASCADE,
+		related_name="week_outcomes",
+	)
+	week_index = models.PositiveSmallIntegerField()
+
+	# Tracked minutes this user logged in this week, as they stood when the
+	# week closed. Savers are deliberately not folded in — they are counted
+	# from SaverCredit so that buying one after the close still counts.
+	real_minutes = models.PositiveIntegerField(default=0)
+	passed = models.BooleanField(default=False)
+
+	closed_at = models.DateTimeField(auto_now_add=True)
+	# When the "you missed a week" DM went out. Null means it hasn't, which is
+	# the only thing that lets close_week be safe to run twice.
+	notified_at = models.DateTimeField(null=True, blank=True)
+
+	override = models.CharField(
+		max_length=1, choices=Override.choices, blank=True, default=Override.NONE
+	)
+	override_by = models.ForeignKey(
+		settings.AUTH_USER_MODEL,
+		on_delete=models.SET_NULL,
+		related_name="week_overrides",
+		null=True,
+		blank=True,
+	)
+	override_note = models.CharField(max_length=200, blank=True, default="")
+
+	class Meta:
+		ordering = ["user_id", "week_index"]
+		constraints = [
+			models.UniqueConstraint(
+				fields=["user", "week_index"], name="one_outcome_per_user_week"
+			),
+		]
+		indexes = [models.Index(fields=["week_index"])]
+
+	def __str__(self):
+		return f"{self.user_id} week {self.week_index}: {'met' if self.passed else 'missed'}"
+
+
+class PearlBracket(models.Model):
+	"""How much of one week's cheap-rate allowance a user has already been paid.
+
+	The first five hours of a week pay the base rate and everything above them
+	pays the bonus rate, but pearls are handed out at T3 finalization — one
+	lump for a whole ship, weeks after the week in question, and a week's hours
+	can be spread over several projects that finalize on different days. So the
+	bracket cannot be worked out from the ship being finalized alone; it needs
+	to know what earlier ships already drew.
+
+	That's this: minutes of week `week_index` that have already been paid at the
+	base rate, counted up as each ship finalizes. Once it reaches
+	weeks.WEEKLY_MINUTES, everything further from that week pays the bonus rate,
+	whichever project it was logged against.
+	"""
+
+	user = models.ForeignKey(
+		settings.AUTH_USER_MODEL,
+		on_delete=models.CASCADE,
+		related_name="pearl_brackets",
+	)
+	week_index = models.PositiveSmallIntegerField()
+	minutes_paid = models.PositiveIntegerField(default=0)
+
+	class Meta:
+		ordering = ["user_id", "week_index"]
+		constraints = [
+			models.UniqueConstraint(
+				fields=["user", "week_index"], name="one_bracket_per_user_week"
+			),
+		]
+
+	def __str__(self):
+		return f"{self.user_id} week {self.week_index}: {self.minutes_paid}m at base rate"
+
+
+class SaverCredit(models.Model):
+	"""One hour credited to one week by a streak saver, append-only.
+
+	Savers are never held: buying one applies it here and then it is history.
+	That makes this the whole story of how a week got to five hours without
+	five hours being logged, and keeps a revived week auditable — each row says
+	which order paid for it, or which organizer granted it.
+
+	One row per hour. Buying three at once writes three rows rather than a row
+	with a quantity, so a partial refund is a deletion of rows and the count is
+	never two numbers that can disagree.
+	"""
+
+	class Source(models.TextChoices):
+		PURCHASE = "purchase", "Bought in the shop"
+		ADMIN = "admin", "Granted by an organizer"
+
+	user = models.ForeignKey(
+		settings.AUTH_USER_MODEL,
+		on_delete=models.CASCADE,
+		related_name="saver_credits",
+	)
+	week_index = models.PositiveSmallIntegerField()
+	source = models.CharField(
+		max_length=16, choices=Source.choices, default=Source.PURCHASE
+	)
+	# The order that paid for it. Null on an organizer's grant, and SET_NULL
+	# rather than CASCADE so deleting an order can never quietly un-save a week.
+	order = models.ForeignKey(
+		"Order",
+		on_delete=models.SET_NULL,
+		related_name="saver_credits",
+		null=True,
+		blank=True,
+	)
+	granted_by = models.ForeignKey(
+		settings.AUTH_USER_MODEL,
+		on_delete=models.SET_NULL,
+		related_name="savers_granted",
+		null=True,
+		blank=True,
+	)
+	note = models.CharField(max_length=200, blank=True, default="")
+	created_at = models.DateTimeField(auto_now_add=True)
+
+	class Meta:
+		ordering = ["-created_at"]
+		indexes = [
+			models.Index(fields=["user", "week_index"]),
+		]
+
+	def __str__(self):
+		return f"saver hour for {self.user_id}, week {self.week_index}"
+
+
 class ShopCategory(models.Model):
 	"""Where a category's shelf sits on the shop page.
 
@@ -1274,6 +1459,19 @@ class ShopCategory(models.Model):
 
 
 class Item(models.Model):
+	class Kind(models.TextChoices):
+		"""What ordering this item actually does.
+
+		Everything but REGULAR skips the fulfillment queue's usual meaning.
+		The two savers are applied the instant they are paid for and are never
+		posted to anyone; PRINTER is the end-of-program claim, which does go to
+		fulfillment but is not something you can find on a shelf.
+		"""
+		REGULAR = "regular", "Regular item"
+		SAVER_CURRENT = "saver_current", "Streak saver: this week"
+		SAVER_PAST = "saver_past", "Streak saver: earliest missed week"
+		PRINTER = "printer", "Printer claim (hidden from the shop)"
+
 	name = models.CharField(max_length=60)
 	description = models.CharField(max_length=500)
 	cost = models.PositiveIntegerField()
@@ -1284,6 +1482,29 @@ class Item(models.Model):
 		default=-1,
 		help_text="Units available to order. -1 means unlimited stock.",
 	)
+	kind = models.CharField(
+		max_length=16,
+		choices=Kind.choices,
+		default=Kind.REGULAR,
+		help_text="Savers are applied on purchase and never reach fulfillment.",
+	)
+	# "<track slug>:<printer name>" on a PRINTER row, "" on everything else.
+	# This is the join back to printers.py, which owns the tree: the rows here
+	# exist only so a claim can become an ordinary Order that fulfillment
+	# already knows how to handle.
+	printer_key = models.CharField(max_length=80, blank=True, default="")
+
+	class Meta:
+		constraints = [
+			# Unique among the rows that set it, and silent about the rest:
+			# every non-printer item leaves it empty, and a UniqueConstraint
+			# over "" would let exactly one of them exist.
+			models.UniqueConstraint(
+				fields=["printer_key"],
+				condition=models.Q(printer_key__gt=""),
+				name="one_item_per_printer",
+			),
+		]
 
 	@property
 	def unlimited_stock(self):
@@ -1292,6 +1513,15 @@ class Item(models.Model):
 	@property
 	def in_stock(self):
 		return self.unlimited_stock or self.stock > 0
+
+	@property
+	def is_saver(self):
+		return self.kind in (self.Kind.SAVER_CURRENT, self.Kind.SAVER_PAST)
+
+	@property
+	def is_instant(self):
+		"""True when ordering this resolves immediately instead of queueing."""
+		return self.is_saver
 
 	def __str__(self):
 		return f"{self.name} ({self.description}) for {self.cost} layers"
@@ -1341,6 +1571,43 @@ class Order(models.Model):
 		if self.cost is None and self.item:
 			self.cost = self.item.cost
 		super().save(*args, **kwargs)
+
+
+class PrinterClaim(models.Model):
+	"""The one printer a user cashes their 40 hours in for, once.
+
+	Nothing on a track is bought while the program runs — the map is a plan you
+	can change your mind about for eight weeks. This is the single transaction
+	at the end that fixes it: it names the printer, records the pearls it cost
+	all in (the track's entry pearls plus every upgrade step leading to it) and
+	carries the Order that puts it in front of fulfillment.
+
+	OneToOne because you get one printer. An organizer who refunds the order
+	deletes the claim, which is what lets the user choose again.
+	"""
+
+	user = models.OneToOneField(
+		settings.AUTH_USER_MODEL,
+		on_delete=models.CASCADE,
+		related_name="printer_claim",
+	)
+	track_slug = models.CharField(max_length=32)
+	printer_name = models.CharField(max_length=60)
+	# What was actually debited, stored rather than recomputed: printers.py is
+	# edited between seasons and this has to keep saying what was paid.
+	pearls_spent = models.PositiveIntegerField(default=0)
+	order = models.ForeignKey(
+		Order,
+		on_delete=models.SET_NULL,
+		related_name="printer_claims",
+		null=True,
+		blank=True,
+	)
+	created_at = models.DateTimeField(auto_now_add=True)
+
+	def __str__(self):
+		return f"{self.user_id} claimed {self.printer_name} ({self.track_slug})"
+
 
 class AuditLog(models.Model):
 	actor = models.ForeignKey(

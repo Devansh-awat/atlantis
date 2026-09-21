@@ -7,6 +7,8 @@ from django.db import transaction
 
 from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN
 
+import json
+
 from ...models import (
     AirtableSubmission, InternalComment, Profile, Project, Ship, T1, T2, T3,
     PAYOUT_MULTIPLIER_DEFAULT, PAYOUT_MULTIPLIER_MAX, PAYOUT_MULTIPLIER_MIN,
@@ -14,7 +16,8 @@ from ...models import (
 )
 from ...checklists import T1_CHECKLIST, ticked, unticked, unticked_message
 from ...submissions import build_override_justification, submit_ship
-from ..helpers import check_perms, send_slack_dm, send_slack_message, slack_mention, record_audit, get_model_info, layers_for_minutes, build_journal_timeline, reviewer_leaderboard, approved_minutes_for_journals, build_review_history, payable_minutes_for_ship, rate_limit, safe_redirect_back, INT_FIELD_MAX, INT_FIELD_MIN
+from ..helpers import check_perms, send_slack_dm, send_slack_message, slack_mention, record_audit, get_model_info, build_journal_timeline, reviewer_leaderboard, approved_minutes_for_journals, build_review_history, payable_minutes_for_ship, payout_buckets, ship_payout, rate_limit, safe_redirect_back, INT_FIELD_MAX, INT_FIELD_MIN
+from ...challenge import brackets_for, draw_brackets
 from .queue import (
     QUEUES, annotate_recordings, dash_context, decorate_rows, go_to_next,
     journal_stats, owner_snapshot, parse_skip, preflight_checks, review_context,
@@ -212,7 +215,7 @@ def t1_decision(request, ship_id):
             if missing:
                 messages.error(request, unticked_message(
                     missing,
-                    "Work through the review checklist before approving — still unchecked:",
+                    "Work through the review checklist before approving; still unchecked:",
                 ))
                 return redirect("review_project", ship_id=ship_id)
             ship.status = Ship.ShipStatus.T2_QUEUE
@@ -274,6 +277,7 @@ def ysws_review_project(request, ship_id):
     # validates the deduction against — the sidebar's pearl preview has to
     # agree with the ceiling the POST handler will enforce.
     logged_time = payable_minutes_for_ship(ship)
+    base_layers, payout_lines, _drawn = ship_payout(ship, logged_time)
     owner = owner_snapshot(ship.project.owner)
     subject = ship_snapshot(ship)
     return render(request, "root/ysws_review_project.html", {
@@ -282,7 +286,9 @@ def ysws_review_project(request, ship_id):
         "timeline": timeline,
         "review_history": build_review_history(ship),
         "logged_time": logged_time,
-        "base_layers": layers_for_minutes(logged_time),
+        "base_layers": base_layers,
+        "payout_lines": payout_lines,
+        "payout_buckets": json.dumps(payout_buckets(ship)),
         "pearls_per_hour": PEARLS_PER_HOUR,
         "owner": owner,
         "subject": subject,
@@ -390,6 +396,7 @@ def fraud_review_project(request, ship_id):
     latest_t2 = ship.t2_reviews.order_by('-id').first()
     deductions = latest_t2.deductions if latest_t2 else 0
     total_time = max(logged_time - deductions, 0)
+    base_layers, payout_lines, _drawn = ship_payout(ship, total_time)
 
     owner = owner_snapshot(ship.project.owner)
     subject = ship_snapshot(ship)
@@ -401,7 +408,9 @@ def fraud_review_project(request, ship_id):
         "logged_time": logged_time,
         "deductions": deductions,
         "total_time": total_time,
-        "base_layers": layers_for_minutes(total_time),
+        "base_layers": base_layers,
+        "payout_lines": payout_lines,
+        "payout_buckets": json.dumps(payout_buckets(ship)),
         "pearls_per_hour": PEARLS_PER_HOUR,
         "multiplier_min": PAYOUT_MULTIPLIER_MIN,
         "multiplier_max": PAYOUT_MULTIPLIER_MAX,
@@ -464,6 +473,7 @@ def t3_decision(request, ship_id):
             return redirect("fraud_review_dash")
 
         payout_layers = 0
+        payout_detail = []
         match decision:
             case T3.Decision.RETURN_T1:
                 ship.status = Ship.ShipStatus.T1_QUEUE
@@ -476,13 +486,26 @@ def t3_decision(request, ship_id):
                 # row; paying them out used to be a DoesNotExist.
                 owner_profile, _ = Profile.objects.get_or_create(user=ship.project.owner)
                 profile = Profile.objects.select_for_update().get(pk=owner_profile.pk)
-                payout_layers = layers_for_minutes(payout_time, payout_multiplier)
+                # Priced inside the lock and against brackets read inside it:
+                # two ships of the same shipper finalizing at once must not
+                # both spend the same week's base-rate allowance.
+                payout_layers, payout_lines, drawn = ship_payout(
+                    ship,
+                    payout_time,
+                    payout_multiplier,
+                    brackets_for(ship.project.owner),
+                )
                 if not INT_FIELD_MIN <= profile.layers + payout_layers <= INT_FIELD_MAX:
                     messages.error(request, "That payout would put the shipper's pearl balance out of range.")
                     return redirect("fraud_review_project", ship_id=ship_id)
                 ship.status = Ship.ShipStatus.FINALIZED
                 profile.layers += payout_layers
                 profile.save(update_fields=["layers"])
+                draw_brackets(ship.project.owner, drawn)
+                payout_detail = [
+                    {"week": line.label, "minutes": line.minutes, "rate": str(line.rate)}
+                    for line in payout_lines
+                ]
             case _:
                 messages.error(request, f"Invalid decision (received decision: {decision})")
                 return redirect("fraud_review_dash")
@@ -497,6 +520,7 @@ def t3_decision(request, ship_id):
             payout_time=payout_time,
             airtable_time=airtable_time,
             payout_multiplier=payout_multiplier,
+            payout_layers=payout_layers,
         )
 
     # Outside the transaction on purpose: the ship is committed as finalized
@@ -519,6 +543,9 @@ def t3_decision(request, ship_id):
         # str: metadata is a plain JSONField and Decimal isn't serialisable.
         "payout_multiplier": str(payout_multiplier),
         "payout_layers": payout_layers,
+        # Which weeks the pearls came out of and at what rate — the only
+        # record of how a split payout was arrived at.
+        "payout_breakdown": payout_detail,
         "new_ship_status": ship.status,
         "airtable_status": submission.status if submission else "",
         "airtable_record_id": submission.record_id if submission else "",

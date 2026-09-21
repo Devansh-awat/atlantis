@@ -7,7 +7,7 @@ from django.db import transaction
 from django.http import JsonResponse
 from django.db.models import Exists, OuterRef
 
-from ...models import Profile, Item, Order, ShopCategory
+from ...models import Profile, Item, Order, SaverCredit, ShopCategory
 from ...crypto import format_address
 from ...hca import (
     IdentityUnavailable, extract_addresses, extract_contact, extract_phone,
@@ -18,13 +18,21 @@ from ..helpers import check_perms, record_audit, send_slack_dm, is_valid_image_u
 @staff_member_required
 @check_perms(["atlantis_site.organizer", "atlantis_site.fulfillment"])
 def shop_dash(request):
-    items = Item.objects.order_by("id")
+    # Printer rows are left out: they are generated from printers.py by
+    # sync_printer_items, nothing here can edit them, and there are dozens of
+    # them. Their prices live on the charts, which is where they are decided.
+    items = Item.objects.exclude(kind=Item.Kind.PRINTER).order_by("id")
     # Categories a rename or a delete left behind are still listed, flagged as
     # unused: they hold their slot for whenever an item lands back in them.
     categories = ShopCategory.objects.annotate(
         in_use=Exists(Item.objects.filter(category=OuterRef("name"), deleted=False))
     )
-    return render(request, "root/shop.html", {"items": items, "categories": categories})
+    return render(request, "root/shop.html", {
+        "items": items,
+        "categories": categories,
+        "item_kinds": Item.Kind.choices,
+        "printer_item_count": Item.objects.filter(kind=Item.Kind.PRINTER, deleted=False).count(),
+    })
 
 @staff_member_required
 @check_perms(["atlantis_site.organizer", "atlantis_site.fulfillment"])
@@ -94,11 +102,17 @@ def update_order_status(request, order_id):
                     item.stock += order.quantity
                 item.save(update_fields=["stock"])
 
+        saver_hours_reversed = 0
         if order.status == Order.OrderStatus.REFUNDED:
             amount_refunded = order.cost * order.quantity
             profile.layers += amount_refunded
             profile.save()
             order.refunded = True
+            # Savers are spent the moment they are bought, so refunding one has
+            # to take the hours back with the pearls — otherwise a refund is a
+            # free week. This can put the buyer back out of the program, which
+            # is the correct outcome: they no longer paid for the rescue.
+            saver_hours_reversed = SaverCredit.objects.filter(order=order).delete()[0]
         elif order.status == Order.OrderStatus.FULFILLED:
             order.fulfilled_at = timezone.now()
         order.save(update_fields=["status", "fulfilled_at", "fulfiller", "refunded"])
@@ -110,6 +124,7 @@ def update_order_status(request, order_id):
         "quantity": order.quantity,
         "previous_status": prev_status,
         "new_status": order.status,
+        "saver_hours_reversed": saver_hours_reversed,
     })
 
     owner_slack_id = profile.slack_id
@@ -173,8 +188,13 @@ def view_order_address(request, order_id):
 # one of them lands in a column that answers a bad value with a driver error
 # rather than a message. Checked in one place because create and edit take the
 # same fields and have to agree about what fits.
-def _item_field_error(name, description, category, imageUrl, cost, stock):
+def _item_field_error(name, description, category, imageUrl, cost, stock, kind=Item.Kind.REGULAR):
     """The first reason these values can't be stored, or None."""
+    # PRINTER rows are generated from printers.py and joined to a tree by
+    # printer_key; one typed in here would have no key and no printer behind it.
+    if kind not in (Item.Kind.REGULAR, Item.Kind.SAVER_CURRENT, Item.Kind.SAVER_PAST):
+        return "Pick a valid item kind."
+
     for label, value, field in (
         ("Name", name, "name"),
         ("Description", description, "description"),
@@ -205,6 +225,7 @@ def create_item(request):
     cost = request.POST.get("cost", "").strip()
     imageUrl = request.POST.get("imageUrl", "").strip()
     category = request.POST.get("category", "").strip() or "Other"
+    kind = request.POST.get("kind", "").strip() or Item.Kind.REGULAR
 
     if not name:
         messages.error(request, "Name is required.")
@@ -242,7 +263,7 @@ def create_item(request):
         messages.error(request, "Stock must be -1 (unlimited) or a non-negative number.")
         return redirect("shop_dash")
 
-    field_error = _item_field_error(name, description, category, imageUrl, cost, stock)
+    field_error = _item_field_error(name, description, category, imageUrl, cost, stock, kind)
     if field_error:
         messages.error(request, field_error)
         return redirect("shop_dash")
@@ -256,6 +277,7 @@ def create_item(request):
         imageUrl = imageUrl,
         category = category,
         stock = stock,
+        kind = kind,
     )
 
     record_audit(request, "create_item", target=f"Item #{item.id} ({item.name})", metadata={
@@ -264,6 +286,7 @@ def create_item(request):
         "cost": item.cost,
         "category": item.category,
         "stock": item.stock,
+        "kind": item.kind,
     })
 
     return redirect("shop_dash")
@@ -274,11 +297,19 @@ def create_item(request):
 def edit_item(request, item_id):
     item = get_object_or_404(Item, id=item_id)
 
+    # A printer row is generated from printers.py and kept in step with it by
+    # sync_printer_items; editing one here would be overwritten on the next
+    # sync and would put its price out of line with the tree it is drawn on.
+    if item.kind == Item.Kind.PRINTER:
+        messages.error(request, "Printer items are generated from the tech trees and can't be edited here.")
+        return redirect("shop_dash")
+
     name = request.POST.get("name", "").strip()
     description = request.POST.get("description", "").strip()
     cost = request.POST.get("cost", "").strip()
     imageUrl = request.POST.get("imageUrl", "").strip()
     category = request.POST.get("category", "").strip() or "Other"
+    kind = request.POST.get("kind", "").strip() or Item.Kind.REGULAR
 
     if not name:
         messages.error(request, "Name is required.")
@@ -312,7 +343,7 @@ def edit_item(request, item_id):
         messages.error(request, "Stock must be -1 (unlimited) or a non-negative number.")
         return redirect("shop_dash")
 
-    field_error = _item_field_error(name, description, category, imageUrl, cost, stock)
+    field_error = _item_field_error(name, description, category, imageUrl, cost, stock, kind)
     if field_error:
         messages.error(request, field_error)
         return redirect("shop_dash")
@@ -324,6 +355,7 @@ def edit_item(request, item_id):
         "imageUrl": item.imageUrl,
         "category": item.category,
         "stock": item.stock,
+        "kind": item.kind,
     }
 
     ShopCategory.ensure(category)
@@ -334,12 +366,13 @@ def edit_item(request, item_id):
     item.imageUrl = imageUrl
     item.category = category
     item.stock = stock
+    item.kind = kind
     item.save()
 
     record_audit(request, "edit_item", target=f"Item #{item.id} ({item.name})", metadata={
         "item_id": item.id,
         "previous": previous,
-        "new": {"name": name, "description": description, "cost": cost, "imageUrl": imageUrl, "category": category, "stock": stock},
+        "new": {"name": name, "description": description, "cost": cost, "imageUrl": imageUrl, "category": category, "stock": stock, "kind": kind},
     })
 
     return redirect("shop_dash")

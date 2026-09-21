@@ -21,8 +21,9 @@ import mimetypes
 from ...models import (
     Project, Ship, Journal, Timelapse, ALLOWED_EDITORS, EDITOR_FILE_EXTENSIONS, EDITOR_ARCHIVE_EXTENSIONS, UNLISTED_EDITOR_EXTENSIONS, LINKABLE_EDITORS, is_editor_model_file
 )
-from ... import activity, lapse, lookout
+from ... import activity, challenge, lapse, lookout
 from ...checklists import SHIP_CHECKLIST, unticked, unticked_message
+from .dashboard import challenge_context
 from .lapse import account_for
 from .timelapse import _apply_session_payload
 from ..helpers import (
@@ -211,6 +212,7 @@ def projects(request):
         "projects": projects,
         "profile": profile,
         "create_blocked_reason": ysws_block_reason(request.user),
+        **challenge_context(request.user),
     })
 
 @login_required
@@ -495,8 +497,11 @@ def project_detail(request, project_id):
     ship_disabled_reason = ""
     if is_owner:
         ysws_blocked = ysws_block_reason(user)
+        dropped = challenge.shipping_blocked_reason(user)
         if ysws_blocked:
             ship_disabled_reason = ysws_blocked
+        elif dropped:
+            ship_disabled_reason = dropped
         elif project.locked:
             ship_disabled_reason = "This project is locked and cannot be shipped."
         elif not is_valid_printables_url(project.printablesUrl):
@@ -647,6 +652,11 @@ def project_detail(request, project_id):
         ),
         "is_following": project.followers.filter(pk=user.pk).exists(),
         "follower_count": project.followers.count(),
+        # Why the book won't take a new lapse, if it won't. Only ever set for
+        # the owner: a visitor's copy says nothing about their streak.
+        "journal_blocked_reason": (
+            challenge.journaling_blocked_reason(user) if is_owner else ""
+        ),
     })
 
 @login_required
@@ -695,6 +705,14 @@ def create_journal(request, project_id):
     
     if not settings.ALLOW_JOURNALING and not request.user.has_perm("atlantis_site.organizer"):
         messages.error(request, "Journaling is disallowed on this instance!")
+        return redirect("project_detail", project_id=project_id)
+
+    # Someone who is out of the program stops banking hours until they buy
+    # their way back in — logging time that could never count towards anything
+    # would be worse than being told plainly.
+    dropped = challenge.journaling_blocked_reason(request.user)
+    if dropped:
+        messages.error(request, dropped)
         return redirect("project_detail", project_id=project_id)
 
     project = get_object_or_404(Project, id=project_id, owner=request.user, deleted=False)
@@ -918,6 +936,13 @@ def ship_project(request, project_id):
     if blocked:
         messages.error(request, blocked)
         return redirect("projects")
+    # Missing a week ends your run, and the run is what shipping is for. Sits
+    # after the HCA check because eligibility is the more fundamental refusal:
+    # somebody HCA has turned down should hear that, not a streak message.
+    dropped = challenge.shipping_blocked_reason(request.user)
+    if dropped:
+        messages.error(request, dropped)
+        return redirect("projects")
     if project.locked:
         messages.error(request, "This project is locked. You cannot ship a locked project.")
         return redirect("projects")
@@ -973,7 +998,7 @@ def ship_project(request, project_id):
     missing = unticked(SHIP_CHECKLIST, request)
     if missing:
         messages.error(request, unticked_message(
-            missing, "Go through the shipping checklist first — still unchecked:"
+            missing, "Go through the shipping checklist first; still unchecked:"
         ))
         return redirect("project_detail", project_id=project_id)
 

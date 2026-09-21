@@ -194,7 +194,7 @@
         if (modKey && button.dataset.modKey !== modKey) return false;
         var fieldset = document.querySelector('[data-checklist]');
         if (fieldset) fieldset.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        toast('Work through the checklist first — ' + button.dataset.checklistLeft + ' left.', 'bad');
+        toast('Work through the checklist first: ' + button.dataset.checklistLeft + ' left.', 'bad');
         return true;
     }
 
@@ -404,6 +404,49 @@
         return roundHalfEven(Math.floor(minutes / 6) * (pearlsPerHour / 10) * multiplier);
     }
 
+    /*
+     * Split `total` across buckets in proportion to their weights, losing
+     * nothing to rounding: floor each share, then hand the remainder to
+     * whoever was rounded down hardest. Mirrors challenge._apportion, which is
+     * what the server will actually pay.
+     */
+    function apportion(total, buckets) {
+        var weight = buckets.reduce(function (sum, b) { return sum + b.weight; }, 0);
+        if (!weight || total <= 0) return buckets.map(function () { return 0; });
+
+        var exact = buckets.map(function (b) { return total * b.weight / weight; });
+        var out = exact.map(Math.floor);
+        var left = total - out.reduce(function (a, b) { return a + b; }, 0);
+        exact
+            .map(function (value, i) { return { i: i, frac: value - out[i] }; })
+            .sort(function (a, b) { return b.frac - a.frac; })
+            .slice(0, left)
+            .forEach(function (entry) { out[entry.i] += 1; });
+        return out;
+    }
+
+    /*
+     * What a payout is worth once its minutes are spread over the weeks the
+     * work was recorded in. An hour is no longer worth one thing: inside a
+     * week's first five hours it pays the base rate, above them the bonus
+     * rate, and prep hours pay the old flat rate. Mirrors
+     * challenge.payout_breakdown, including rounding once at the end rather
+     * than per bucket.
+     */
+    function layersForSplit(minutes, buckets, multiplier) {
+        var shares = apportion(minutes, buckets);
+        var total = 0;
+        buckets.forEach(function (bucket, i) {
+            var share = shares[i];
+            if (!share) return;
+            var base = Math.min(share, bucket.room);
+            var bonus = share - base;
+            total += Math.floor(base / 6) * (bucket.base / 10) * multiplier;
+            total += Math.floor(bonus / 6) * (bucket.bonus / 10) * multiplier;
+        });
+        return roundHalfEven(total);
+    }
+
     function setupPayout() {
         document.querySelectorAll('[data-payout]').forEach(function (panel) {
             var mode = panel.dataset.payout;
@@ -416,6 +459,18 @@
             var readout = document.getElementById('multiplier_value');
             if (!out) return;
 
+            /*
+             * The weeks this ship's hours fall in, with the rates each one
+             * prices at. Absent (or empty) on a ship with no approved time,
+             * where the flat rate is all there is to fall back on.
+             */
+            var buckets = [];
+            try {
+                buckets = JSON.parse(panel.dataset.payoutBuckets || '[]');
+            } catch (err) {
+                buckets = [];
+            }
+
             var render = function () {
                 var multiplier = slider ? parseFloat(slider.value) : 1;
                 var minutes;
@@ -425,8 +480,14 @@
                 } else {
                     minutes = Math.max(parseInt(input && input.value, 10) || 0, 0);
                 }
-                var base = layersFor(minutes, perHour, 1);
-                var paid = layersFor(minutes, perHour, multiplier);
+                var price = buckets.length
+                    ? function (m) { return layersForSplit(m, buckets, multiplier); }
+                    : function (m) { return layersFor(m, perHour, multiplier); };
+                var unscaled = buckets.length
+                    ? layersForSplit(minutes, buckets, 1)
+                    : layersFor(minutes, perHour, 1);
+                var base = unscaled;
+                var paid = price(minutes);
                 if (inLabel) inLabel.textContent = minutes + ' min';
                 if (readout) readout.textContent = multiplier.toFixed(1) + '×';
                 out.textContent = base === paid

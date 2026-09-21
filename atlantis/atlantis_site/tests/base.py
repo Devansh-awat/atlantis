@@ -9,12 +9,15 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
+from datetime import timedelta
+
 from cryptography.fernet import Fernet
 from PIL import Image
 
+from .. import weeks
 from ..checklists import FIELD as CHECKLIST_FIELD, SHIP_CHECKLIST, T1_CHECKLIST
 from ..models import (
-	Journal, Timelapse, Profile, Project, Ship, TimelapseRemoval,
+	Item, Journal, Timelapse, Profile, Project, Ship, TimelapseRemoval,
 	TimelapseReview,
 )
 
@@ -26,6 +29,58 @@ TEST_STORAGES = {
 }
 
 TEST_ENCRYPTION_KEY = Fernet.generate_key().decode()
+
+# Where the challenge weeks sit for a test that doesn't say otherwise: far
+# enough out that `timezone.now()` is always in the prep period, so the flat
+# pearl rate applies, nobody can be eliminated, and no test's result depends on
+# what today's date happens to be. Tests about the challenge move it with
+# `during_week` below and say which week they mean.
+TEST_CHALLENGE_START = "2099-01-05"  # a Monday
+
+
+def during_week(index=1):
+	"""override_settings putting `timezone.now()` inside challenge week `index`.
+
+	Anchored on this week's Monday in the program's own timezone, so the run is
+	always somewhere in the middle of the named week whatever day it is.
+	"""
+	today = timezone.now().astimezone(weeks.zone()).date()
+	monday = today - timedelta(days=today.weekday())
+	return override_settings(
+		CHALLENGE_START_DATE=(monday - timedelta(weeks=index - 1)).isoformat()
+	)
+
+
+def after_week(index):
+	"""override_settings putting `now` just past the end of week `index`.
+
+	The program is `index` weeks long here, so week `index` has closed and there
+	is no live week — which is what judging a finished week needs.
+	"""
+	return override_settings(
+		**{**during_week(index + 1).options, "CHALLENGE_WEEKS": index}
+	)
+
+
+def in_week(index, minute=0):
+	"""A datetime inside challenge week `index`, for a recording's recorded_at."""
+	start, _end = weeks.week_bounds(index)
+	return start + timedelta(days=2, hours=9, minutes=minute)
+
+
+def before_the_program():
+	"""A datetime in the prep period, which pays the flat rate."""
+	return weeks.starts_at() - timedelta(days=3)
+
+
+def shop_items():
+	"""Items that are actually merchandise.
+
+	A data migration seeds one hidden row per printer so a claim can become an
+	ordinary order, so "how many items exist" is never zero any more. Anything
+	counting what a shop action created means this.
+	"""
+	return Item.objects.exclude(kind=Item.Kind.PRINTER)
 
 VALID_PRINTABLES_URL = "https://www.printables.com/model/12345-cool-thing"
 VALID_EDITOR_LINK = "https://cad.onshape.com/documents/abc123"
@@ -234,12 +289,17 @@ def message_texts(response):
 	STORAGES=TEST_STORAGES,
 	MEDIA_URL="/media/",
 	ADDRESS_ENCRYPTION_KEY=TEST_ENCRYPTION_KEY,
+	CHALLENGE_START_DATE=TEST_CHALLENGE_START,
 )
 class BaseTestCase(TestCase):
-	SLACK_DM_TARGETS = [
-		"atlantis_site.views.admin.review.send_slack_dm",
-		"atlantis_site.views.admin.shop.send_slack_dm",
-	]
+	# Keyed explicitly rather than derived from the last-but-one path segment:
+	# the admin and client shop modules both end in "shop", and deriving would
+	# have the second silently replace the first in the dict.
+	SLACK_DM_TARGETS = {
+		"review": "atlantis_site.views.admin.review.send_slack_dm",
+		"shop": "atlantis_site.views.admin.shop.send_slack_dm",
+		"client_shop": "atlantis_site.views.client.shop.send_slack_dm",
+	}
 	SLACK_MESSAGE_TARGETS = [
 		"atlantis_site.views.admin.review.send_slack_message",
 	]
@@ -255,9 +315,9 @@ class BaseTestCase(TestCase):
 	def setUp(self):
 		super().setUp()
 		self.slack_dm_mocks = {}
-		for target in self.SLACK_DM_TARGETS:
+		for key, target in self.SLACK_DM_TARGETS.items():
 			patcher = patch(target, return_value=True)
-			self.slack_dm_mocks[target.rsplit(".", 2)[-2]] = patcher.start()
+			self.slack_dm_mocks[key] = patcher.start()
 			self.addCleanup(patcher.stop)
 
 		self.slack_message_mocks = {}

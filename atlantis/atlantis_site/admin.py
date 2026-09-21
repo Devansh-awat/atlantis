@@ -1,8 +1,8 @@
 from django.contrib import admin
 
 from .models import (
-    AirtableSubmission, AuditLog, LapseAccount, Timelapse, TimelapseRemoval,
-    TimelapseReview,
+    AirtableSubmission, AuditLog, LapseAccount, PearlBracket, PrinterClaim,
+    SaverCredit, Timelapse, TimelapseRemoval, TimelapseReview, WeekOutcome,
 )
 
 
@@ -118,3 +118,62 @@ class AirtableSubmissionAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+class ReadOnlyAdmin(admin.ModelAdmin):
+    """Look, don't touch.
+
+    Everything below records where somebody stands in the challenge or what
+    they were paid, and all of it is changed through /root/challenge, which
+    audit-logs who did it and why. A quiet edit here would leave a streak
+    restored or a printer claimed with nothing saying who decided that.
+    """
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(WeekOutcome)
+class WeekOutcomeAdmin(ReadOnlyAdmin):
+    list_display = ("user", "week_index", "passed", "real_minutes", "override", "closed_at", "notified_at")
+    list_filter = ("week_index", "passed", "override")
+    search_fields = ("user__username",)
+
+
+@admin.register(SaverCredit)
+class SaverCreditAdmin(ReadOnlyAdmin):
+    list_display = ("user", "week_index", "source", "order", "granted_by", "created_at")
+    list_filter = ("week_index", "source", "created_at")
+    search_fields = ("user__username", "granted_by__username", "note")
+    date_hierarchy = "created_at"
+
+
+@admin.register(PearlBracket)
+class PearlBracketAdmin(ReadOnlyAdmin):
+    """How much of each week's cheap-rate allowance a payout has already spent.
+
+    Editing one would re-open an allowance that has been paid out, which is a
+    second payment at the low rate for hours already bought.
+    """
+    list_display = ("user", "week_index", "minutes_paid")
+    list_filter = ("week_index",)
+    search_fields = ("user__username",)
+
+
+@admin.register(PrinterClaim)
+class PrinterClaimAdmin(ReadOnlyAdmin):
+    list_display = ("user", "track_slug", "printer_name", "pearls_spent", "order", "created_at")
+    list_filter = ("track_slug", "created_at")
+    search_fields = ("user__username", "printer_name")
+    date_hierarchy = "created_at"
+
+    def has_delete_permission(self, request, obj=None):
+        # The one exception: refunding a printer means letting them choose
+        # again, and deleting the claim is how that is done.
+        return True

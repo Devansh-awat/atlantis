@@ -31,7 +31,7 @@
                     <h2 class="shelf-label">{{ group.grouper }}</h2>
                     <div class="item-grid">
                         {% for item in group.list %}
-                            <article class="item-card{% if not item.in_stock %} sold-out{% endif %}">
+                            <article class="item-card{% if not item.in_stock %} sold-out{% endif %}{% if item.blocked_reason %} unavailable{% endif %}">
                                 {% if item.imageUrl %}
                                     <img class="item-card-image" src="{{ item.imageUrl }}" alt="{{ item.name }}" loading="lazy"
                                          onerror="this.hidden = true; this.nextElementSibling.hidden = false">
@@ -51,9 +51,24 @@
                                 <h3 class="item-card-title">{{ item.name }}</h3>
                                 <p class="item-card-desc">{{ item.description }}</p>
 
+                                {% if item.is_saver %}
+                                    {% comment %}
+                                    A saver is not a parcel: it is spent the
+                                    moment it is paid for, on a week named here
+                                    so nobody buys the wrong one.
+                                    {% endcomment %}
+                                    {% if item.blocked_reason %}
+                                        <p class="item-card-note item-card-note-off">{{ item.blocked_reason }}</p>
+                                    {% else %}
+                                        <p class="item-card-note">Applies to {{ item.saver_target }}, instantly.</p>
+                                    {% endif %}
+                                {% endif %}
+
                                 <div class="item-card-foot">
                                     <span class="item-card-cost"><span class="pearl" aria-hidden="true"></span>{{ item.cost }}</span>
-                                    {% if item.in_stock %}
+                                    {% if item.blocked_reason %}
+                                        <span class="order-btn" aria-disabled="true" title="{{ item.blocked_reason }}">unavailable</span>
+                                    {% elif item.in_stock %}
                                         {% comment %}
                                         A link to the item page, which the script turns into the
                                         pop-up. Without JavaScript it still walks you to a page
@@ -66,6 +81,7 @@
                                            data-description="{{ item.description }}"
                                            data-cost="{{ item.cost }}"
                                            data-image="{{ item.imageUrl }}"
+                                           data-saver="{% if item.is_saver %}{{ item.saver_target }}{% endif %}"
                                            data-stock="{% if not item.unlimited_stock %}{{ item.stock }}{% endif %}">order</a>
                                     {% else %}
                                         <span class="order-btn" aria-disabled="true">sold out</span>
@@ -119,12 +135,18 @@
 
                 <p class="order-warn" id="orderWarn" hidden></p>
 
-                <div class="shipping-address">
+                <div class="shipping-address" id="shippingBlock">
                     <p class="shipping-address-hint">This order ships to your Hack Club address.</p>
                     <button type="button" id="view-address-btn" class="link-button"
                             data-url="{% url 'view_own_address' %}">View address</button>
                     <div id="address-box" class="address-box" hidden></div>
                 </div>
+
+                {% comment %}
+                Shown in place of the address for a saver, which is applied here
+                and never posted anywhere.
+                {% endcomment %}
+                <p class="order-saver-note" id="orderSaverNote" hidden></p>
 
                 <div class="modal-actions">
                     <button type="button" data-close-order>Cancel</button>
@@ -156,10 +178,16 @@
             const submitBtn = document.getElementById("orderSubmit");
             const addressBox = document.getElementById("address-box");
             const addressBtn = document.getElementById("view-address-btn");
+            const shippingBlock = document.getElementById("shippingBlock");
+            const saverNote = document.getElementById("orderSaverNote");
 
             let unitCost = 0;
             let stock = null;
             let opener = null;
+            // The week a streak saver would land on, or "" for anything that
+            // is an actual parcel. Drives both the note in the pop-up and the
+            // extra confirmation on the way out.
+            let saverWeek = "";
 
             function pearls(n) {
                 return n + (n === 1 ? " pearl" : " pearls");
@@ -196,6 +224,17 @@
                 opener = btn;
                 unitCost = parseInt(btn.dataset.cost, 10) || 0;
                 stock = btn.dataset.stock ? parseInt(btn.dataset.stock, 10) : null;
+                saverWeek = btn.dataset.saver || "";
+
+                // A saver goes nowhere near the post, so the address block is
+                // replaced rather than left saying something untrue.
+                shippingBlock.hidden = !!saverWeek;
+                saverNote.hidden = !saverWeek;
+                if (saverWeek) {
+                    saverNote.textContent =
+                        "Applied to " + saverWeek + " the moment you buy it. Nothing is shipped, "
+                        + "and one saver covers one hour.";
+                }
 
                 form.action = btn.dataset.orderUrl;
                 titleEl.textContent = btn.dataset.name;
@@ -280,9 +319,26 @@
 
             qtyEl.addEventListener("input", recalc);
 
-            form.addEventListener("submit", () => {
+            form.addEventListener("submit", (e) => {
+                // Savers are spent on the spot and there is no queue to cancel
+                // out of, so this is the last chance to stop — and it names the
+                // week, because buying the wrong one is the real mistake.
+                if (saverWeek) {
+                    const qty = parseInt(qtyEl.value, 10) || 1;
+                    const hours = qty === 1 ? "1 hour" : qty + " hours";
+                    const ok = window.confirm(
+                        "Apply " + hours + " to " + saverWeek + " for "
+                        + pearls(unitCost * qty) + "?\n\n"
+                        + "This happens straight away and can't be undone from here."
+                    );
+                    if (!ok) {
+                        e.preventDefault();
+                        return;
+                    }
+                }
+
                 submitBtn.disabled = true;
-                submitBtn.textContent = "Ordering…";
+                submitBtn.textContent = saverWeek ? "Applying…" : "Ordering…";
             });
 
             window.addEventListener("pageshow", (e) => {

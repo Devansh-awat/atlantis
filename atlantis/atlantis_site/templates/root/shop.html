@@ -35,6 +35,14 @@
     {% endif %}
     <section class="item-list">
         <h3>Items</h3>
+        {% if printer_item_count %}
+            <p class="muted">
+                Plus {{ printer_item_count }} hidden printer items, generated from the
+                tech trees so a claim can become an order. They aren't sold here and
+                their prices are set in <code>printers.py</code>; run
+                <code>sync_printer_items</code> after changing it.
+            </p>
+        {% endif %}
         {% if items %}
             <div class="table-scroll">
                 <table class="users-table">
@@ -44,6 +52,7 @@
                             <th>Name</th>
                             <th>Description</th>
                             <th>Category</th>
+                            <th>Kind</th>
                             <th>Cost</th>
                             <th>Stock</th>
                             <th>Actions</th>
@@ -61,10 +70,11 @@
                                 <td><a href="{% url 'item_detail' item.id %}">{{ item.name }}</a></td>
                                 <td>{{ item.description|truncatechars:80 }}</td>
                                 <td>{{ item.category }}</td>
+                                <td>{% if item.kind != 'regular' %}{{ item.get_kind_display }}{% else %}Regular{% endif %}</td>
                                 <td>{{ item.cost }} pearls</td>
                                 <td>{% if item.unlimited_stock %}Unlimited{% else %}{{ item.stock }}{% endif %}</td>
                                 <td>
-                                    <button type="button" class="open-edit link-button" data-item-id="{{ item.id }}" data-name="{{ item.name }}" data-description="{{ item.description }}" data-cost="{{ item.cost }}" data-image-url="{{ item.imageUrl }}" data-category="{{ item.category }}" data-stock="{{ item.stock }}">Edit</button>
+                                    <button type="button" class="open-edit link-button" data-item-id="{{ item.id }}" data-name="{{ item.name }}" data-description="{{ item.description }}" data-cost="{{ item.cost }}" data-image-url="{{ item.imageUrl }}" data-category="{{ item.category }}" data-stock="{{ item.stock }}" data-kind="{{ item.kind }}">Edit</button>
                                     <br>
                                     <form action="{% url 'delete_item' item.id %}" method="post" class="delete-form" style="display: inline;">
                                         {% csrf_token %}
@@ -120,6 +130,19 @@
                 <small>-1 means unlimited</small>
             </label>
 
+            <label>
+                Kind
+                <select name="kind">
+                    {% for value, label in item_kinds %}
+                        {% if value != 'printer' %}<option value="{{ value }}">{{ label }}</option>{% endif %}
+                    {% endfor %}
+                </select>
+                <small>
+                    Savers are applied the moment they're bought and never reach
+                    fulfillment. Printer rows are generated from the tech trees.
+                </small>
+            </label>
+
             <div class="modal-actions">
                 <button type="button" id="cancelCreateModal">Cancel</button>
                 <button type="submit">Create</button>
@@ -165,6 +188,19 @@
                 Stock
                 <input id="editStock" name="stock" type="number" min="-1" placeholder="-1">
                 <small>-1 means unlimited</small>
+            </label>
+
+            <label>
+                Kind
+                <select id="editKind" name="kind">
+                    {% for value, label in item_kinds %}
+                        {% if value != 'printer' %}<option value="{{ value }}">{{ label }}</option>{% endif %}
+                    {% endfor %}
+                </select>
+                <small>
+                    Savers are applied the moment they're bought and never reach
+                    fulfillment. Printer rows are generated from the tech trees.
+                </small>
             </label>
 
             <div class="modal-actions">
@@ -281,6 +317,7 @@
             const imageUrl = openEditBtn.dataset.imageUrl || '';
             const category = openEditBtn.dataset.category || '';
             const stock = openEditBtn.dataset.stock || '-1';
+            const kind = openEditBtn.dataset.kind || 'regular';
 
             editForm.action = '/shop/' + id + '/edit/';
             editName.value = name;
@@ -289,6 +326,7 @@
             editImageUrl.value = imageUrl;
             editCategory.value = category;
             editStock.value = stock;
+            document.getElementById('editKind').value = kind;
 
             openEditModal();
             closeAllMenus();

@@ -1245,6 +1245,34 @@
     line-height: 1.45;
 }
 
+/*
+ * Where the pearls came from. An hour is worth one of three rates depending on
+ * the week it was recorded in, so the total on its own is no longer something a
+ * reviewer can check by eye — this is the arithmetic behind it.
+ */
+.root-page .rv-payout-split {
+    margin: 6px 0 0;
+    padding: 0;
+    list-style: none;
+    font-size: 11.5px;
+    font-variant-numeric: tabular-nums;
+    color: var(--oc-ink-3);
+}
+
+.root-page .rv-payout-split li {
+    display: flex;
+    gap: 8px;
+    line-height: 1.6;
+}
+
+.root-page .rv-payout-split-week {
+    flex: 1 1 auto;
+}
+
+.root-page .rv-payout-split-rate {
+    color: var(--oc-ink-2);
+}
+
 
 /* ---------- the decision buttons ---------- */
 

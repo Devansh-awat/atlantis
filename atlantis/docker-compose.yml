@@ -10,6 +10,21 @@ services:
       db:
         condition: service_healthy
 
+  # The timer for the management commands: close_week, submit_airtable and
+  # check_timelapse_activity. Same image as web, so it is always running the
+  # code that was deployed, but it never serves traffic and never migrates —
+  # web owns that, and scheduler.sh waits for it. See that file for why this
+  # is a loop rather than cron.
+  cron:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: ["sh", "./scheduler.sh"]
+    depends_on:
+      db:
+        condition: service_healthy
+
   db:
     image: postgres:16
     restart: unless-stopped

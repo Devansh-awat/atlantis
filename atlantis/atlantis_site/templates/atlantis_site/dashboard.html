@@ -8,6 +8,7 @@
     {% include '_favicon.html' %}
     <link rel="stylesheet" href="{% static 'atlantis_site/css/fonts-hand.css' %}">
     <link rel="stylesheet" href="{% static 'atlantis_site/css/dashboard.css' %}">
+    <link rel="stylesheet" href="{% static 'atlantis_site/css/streak.css' %}">
 </head>
 <body>
     <div id="backdrop" aria-hidden="true"></div>
@@ -94,21 +95,32 @@
         </div>
     </a>
 
-    <div class="hud" id="hud-counters" title="{{ profile.layers }} pearls">
-        <span id="hud-pearl">
-            <img src="{% static 'atlantis_site/assets/img/dashboard/pearl.png' %}" alt="Pearls:">
-        </span>
-        <span>{{ profile.layers }}</span>
-    </div>
-
     {% comment %}
-    The same gate admin_dash is behind: staff, plus one of the review or
-    organizer perms. The link is only shown to someone /root will let in.
+    The right corner stacks: pearls, then the week's progress, then the staff
+    link. A column rather than three separately-positioned elements because the
+    streak panel's height moves with its state — a countdown, a "you're out"
+    line, a "not started yet" note — and anything pinned below it by a fixed
+    offset would collide with the taller ones.
     {% endcomment %}
-    {% if user.is_staff %}
-        {% if perms.atlantis_site.organizer or perms.atlantis_site.fulfillment or perms.atlantis_site.t1_review or perms.atlantis_site.t2_review or perms.atlantis_site.t3_review or perms.atlantis_site.timelapse_review %}
-            <a class="hud" id="hud-admin" href="{% url 'admin_dash' %}">admin</a>
+    <div id="hud-right">
+        <div class="hud-row" id="hud-counters" title="{{ profile.layers }} pearls">
+            <span id="hud-pearl">
+                <img src="{% static 'atlantis_site/assets/img/dashboard/pearl.png' %}" alt="Pearls:">
+            </span>
+            <span>{{ profile.layers }}</span>
+        </div>
+
+        {% include "atlantis_site/_streak_panel.html" %}
+
+        {% comment %}
+        The same gate admin_dash is behind: staff, plus one of the review or
+        organizer perms. The link is only shown to someone /root will let in.
+        {% endcomment %}
+        {% if user.is_staff %}
+            {% if perms.atlantis_site.organizer or perms.atlantis_site.fulfillment or perms.atlantis_site.t1_review or perms.atlantis_site.t2_review or perms.atlantis_site.t3_review or perms.atlantis_site.timelapse_review %}
+                <a id="hud-admin" href="{% url 'admin_dash' %}">admin</a>
+            {% endif %}
         {% endif %}
-    {% endif %}
+    </div>
 </body>
 </html>

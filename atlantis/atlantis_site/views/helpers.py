@@ -142,6 +142,57 @@ def payable_journals_for_ship(ship):
 def payable_minutes_for_ship(ship):
     return approved_minutes_for_journals(payable_journals_for_ship(ship))
 
+
+def ship_payout(ship, minutes, multiplier=PAYOUT_MULTIPLIER_DEFAULT, brackets=None):
+    """What paying `minutes` on this ship is worth, split across its weeks.
+
+    Returns (pearls, lines, drawn) — see challenge.payout_breakdown. `brackets`
+    defaults to what the owner has already drawn, which is what both the
+    reviewer's preview and the finalization itself want; the finalization
+    passes its own locked copy.
+    """
+    from ..challenge import brackets_for, payout_breakdown
+
+    journals = payable_journals_for_ship(ship)
+    if brackets is None:
+        brackets = brackets_for(ship.project.owner)
+    return payout_breakdown(journals, minutes, multiplier, brackets)
+
+
+def payout_buckets(ship, brackets=None):
+    """The weights and rates the reviewer's live preview recomputes from.
+
+    The pearls a payout is worth depend on which weeks its hours were recorded
+    in, so the slider can't just multiply by a rate any more. This is that
+    shape as plain JSON: one entry per week the ship touches, carrying the
+    approved seconds that decide its share of the minutes and the rates that
+    share will be priced at.
+    """
+    from ..challenge import (
+        CHALLENGE_BASE_PEARLS_PER_HOUR, CHALLENGE_BONUS_PEARLS_PER_HOUR, PREP,
+        _approved_seconds_by_week, brackets_for,
+    )
+    from .. import weeks as weeks_mod
+
+    owner = ship.project.owner
+    if brackets is None:
+        brackets = brackets_for(owner)
+
+    approved = _approved_seconds_by_week(payable_journals_for_ship(ship))
+    out = []
+    for key in sorted(approved, key=lambda k: -1 if k is PREP else k):
+        prep = key is PREP
+        out.append({
+            "week": 0 if prep else key,
+            "weight": approved[key],
+            # How many of this bucket's minutes still price at the base rate.
+            # Prep has no bracket: all of it is one flat rate.
+            "room": 0 if prep else max(weeks_mod.WEEKLY_MINUTES - brackets.get(key, 0), 0),
+            "base": float(PEARLS_PER_HOUR if prep else CHALLENGE_BASE_PEARLS_PER_HOUR),
+            "bonus": float(PEARLS_PER_HOUR if prep else CHALLENGE_BONUS_PEARLS_PER_HOUR),
+        })
+    return out
+
 def timelapse_cleared_ships(ships):
     return ships.exclude(
         Exists(Journal.objects.filter(ship=OuterRef("pk"), timelapse_review__isnull=True))

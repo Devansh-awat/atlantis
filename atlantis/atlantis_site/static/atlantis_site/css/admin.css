@@ -903,3 +903,92 @@
         flex-wrap: wrap;
     }
 }
+
+/* ---------- the streaks roster ---------- */
+
+/*
+ * Every participant against every week, as a grid of small cells. The point of
+ * the page is scanning a column ("who missed week 3") and a row ("how is this
+ * person doing"), so the weeks are fixed-width and carry a shape as well as a
+ * colour — a red square and a green square are the same square to a reader who
+ * can't tell them apart.
+ */
+.root-page .challenge-table .challenge-week {
+    width: 44px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.root-page .challenge-table .challenge-week-live {
+    color: var(--oc-tide-2);
+}
+
+.root-page .challenge-cell {
+    width: 44px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.root-page .challenge-cell.is-met {
+    background: var(--oc-good-soft);
+    color: var(--oc-good);
+}
+
+.root-page .challenge-cell.is-missed {
+    background: var(--oc-bad-soft);
+    color: var(--oc-bad-strong);
+}
+
+.root-page .challenge-cell.is-live {
+    background: var(--oc-warn-soft);
+    color: var(--oc-warn);
+    font-size: 11px;
+}
+
+.root-page .challenge-cell.is-future {
+    color: var(--oc-ink-3);
+}
+
+.root-page .pill {
+    display: inline-block;
+    padding: 1px 9px 2px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    white-space: nowrap;
+}
+
+.root-page .pill-good {
+    background: var(--oc-good-soft);
+    color: var(--oc-good);
+}
+
+.root-page .pill-warn {
+    background: var(--oc-warn-soft);
+    color: var(--oc-warn);
+}
+
+.root-page .pill-bad {
+    background: var(--oc-bad-soft);
+    color: var(--oc-bad-strong);
+}
+
+/* A form that lives inside a table cell, or reads as one line of controls. */
+.root-page .inline-form {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.root-page .inline-form input[type="text"],
+.root-page .inline-form input[type="number"] {
+    width: 10em;
+}
+
+.root-page .inline-form input[type="number"] {
+    width: 5em;
+}
+
+.root-page .muted {
+    color: var(--oc-ink-3);
+}

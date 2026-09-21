@@ -1,0 +1,87 @@
+{% extends 'root/_base_root.html' %}
+
+{% block page_id %}admin-challenge-page{% endblock %}
+{% block title %}Streaks{% endblock %}
+
+{% block content %}
+<div class="content">
+    {% include "root/_messages_admin.html" %}
+    <h1>Streaks</h1>
+    <p class="muted">
+        Every week against every participant. Out first, then anyone whose live
+        week is still short: the people worth chasing before Sunday.
+    </p>
+
+    <form method="GET" class="users-search" role="search">
+        <input type="search" name="q" value="{{ search }}"
+               placeholder="Search by username" aria-label="Search by username" autocomplete="off">
+        <select name="show" aria-label="Filter">
+            <option value="" {% if not show %}selected{% endif %}>Everyone</option>
+            <option value="out" {% if show == 'out' %}selected{% endif %}>Out of the program</option>
+            <option value="at-risk" {% if show == 'at-risk' %}selected{% endif %}>Short this week</option>
+        </select>
+        <button type="submit">Filter</button>
+        {% if search or show %}<a href="{% url 'challenge_dash' %}" class="link-button">Clear</a>{% endif %}
+    </form>
+
+    {% if truncated %}
+        <p class="muted">Showing the first {{ page_size }} accounts. Narrow it with a search.</p>
+    {% endif %}
+
+    <div class="table-scroll">
+        <table class="users-table challenge-table">
+            <thead>
+                <tr>
+                    <th>User</th>
+                    {% for index in week_indexes %}
+                        <th class="challenge-week{% if index == current_week %} challenge-week-live{% endif %}">
+                            W{{ index }}
+                        </th>
+                    {% endfor %}
+                    <th>Printer</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td><a href="{% url 'challenge_user' row.user.id %}">{{ row.name }}</a></td>
+
+                        {% for week in row.standing.weeks %}
+                            {% comment %}
+                            One cell per week, carrying its own story in the
+                            tooltip: a bare tick doesn't say whether the five
+                            hours were logged or bought.
+                            {% endcomment %}
+                            <td class="challenge-cell
+                                {% if week.missed %}is-missed
+                                {% elif week.met %}is-met
+                                {% elif week.current %}is-live
+                                {% else %}is-future{% endif %}"
+                                title="{{ week.label }}: {{ week.credited_display }}{% if week.saver_hours %} ({{ week.saver_hours }}h saved){% endif %}{% if week.override %}, overridden{% endif %}">
+                                {% if week.missed %}&times;
+                                {% elif week.met %}&check;
+                                {% elif week.current %}{{ week.percent }}%
+                                {% else %}&middot;{% endif %}
+                            </td>
+                        {% endfor %}
+
+                        <td>{{ row.standing.printer_hours }}h</td>
+                        <td>
+                            {% if row.standing.eliminated %}
+                                <span class="pill pill-bad">out, needs {{ row.standing.saver_hours_needed }}h</span>
+                            {% elif row.at_risk %}
+                                <span class="pill pill-warn">short this week</span>
+                            {% else %}
+                                <span class="pill pill-good">on track</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="{{ week_indexes|length|add:3 }}">Nobody matches that.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

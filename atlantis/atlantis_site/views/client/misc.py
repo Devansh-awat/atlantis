@@ -1,11 +1,17 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import get_user_model
+from django.contrib import messages
+from django.db import transaction
 from django.db.models import Sum
 from django.http import Http404
+from django.views.decorators.http import require_POST
 
-from ...models import Journal, Timelapse, Ship
-from ...printers import tracks, track as find_track
+from ... import challenge, weeks
+from ...hca import AddressUnavailable
+from ...models import Item, Journal, Order, PrinterClaim, Profile, Timelapse, Ship
+from ...printers import item_key, printer as find_printer, tracks, track as find_track
+from ..helpers import rate_limit, record_audit, too_long
 
 # The one list of guides: the scroll rail in _guides_base.html renders it, and
 # guide_detail() will only serve a slug that appears here. Adding a guide means
@@ -75,13 +81,33 @@ def guide_detail(request, slug):
         "active_guide": slug,
     })
 
+def _claim_context(user):
+    """The state every printer page reads: hours banked, and what they buy.
+
+    Nothing is bought while the program runs — the maps are a plan you can
+    change your mind about for eight weeks — so all of this is about whether
+    the one claim at the end is open yet and what it would cost.
+    """
+    state = challenge.standing(user)
+    profile = user.hackclub_profile
+    return {
+        "profile": profile,
+        "standing": state,
+        "chosen_track": profile.printer_track,
+        "claim": PrinterClaim.objects.filter(user=user).first(),
+        "claim_open": state.can_claim_printer,
+        "printer_hours_total": weeks.printer_hours(),
+    }
+
+
 @login_required
 def printer_select(request):
     # The chart room: every track's constellation at once, each one a way in
     # to the tree that printer_track() draws.
+    context = _claim_context(request.user)
     return render(request, "atlantis_site/printer_select.html", {
-        "profile": request.user.hackclub_profile,
         "tracks": tracks(),
+        **context,
     })
 
 
@@ -93,10 +119,147 @@ def printer_track(request, slug):
     if chosen is None:
         raise Http404("No such printer track")
 
+    context = _claim_context(request.user)
+    # What each star costs against what they can actually pay, so the map can
+    # say which ones are within reach rather than leaving them to do the sums.
+    affordable = context["profile"].layers
+    printers = [
+        {**entry, "affordable": entry["pearls"] <= affordable}
+        for entry in chosen["printers"]
+    ]
+
     return render(request, "atlantis_site/printer_track.html", {
-        "profile": request.user.hackclub_profile,
-        "track": chosen,
+        "track": {**chosen, "printers": printers},
+        "is_chosen_track": context["chosen_track"] == slug,
+        **context,
     })
+
+
+@login_required
+@require_POST
+@rate_limit("choose_printer_track", 2)
+def choose_printer_track(request, slug):
+    """Commit to a manufacturer's tree — reversible right up until the claim.
+
+    Free to change because nothing has been spent: the pearls for a printer and
+    every upgrade leading to it are debited once, at the claim, so switching
+    tracks costs nothing and refunds nothing.
+    """
+    if find_track(slug) is None:
+        raise Http404("No such printer track")
+
+    if PrinterClaim.objects.filter(user=request.user).exists():
+        messages.error(request, "You've already claimed your printer.")
+        return redirect("printer_track", slug=slug)
+
+    profile = request.user.hackclub_profile
+    profile.printer_track = slug
+    profile.save(update_fields=["printer_track"])
+
+    record_audit(request, "choose_printer_track", target=slug, metadata={"track": slug})
+    messages.success(request, f"{find_track(slug)['name']} is your track. You can still change it any time before you claim.")
+    return redirect("printer_track", slug=slug)
+
+
+@login_required
+@require_POST
+@rate_limit("claim_printer", 3)
+def claim_printer(request, slug):
+    """Cash 40 hours and a pile of pearls in for one printer, once.
+
+    This is the only moment anything on a tree is paid for. The cost is the
+    whole path: the track's entry pearls plus every upgrade step between its
+    opening printer and the one being claimed, which is exactly the `pearls`
+    total printers.py works out. What comes out the other side is an ordinary
+    pending Order, so fulfillment posts a printer the same way it posts
+    filament.
+    """
+    printer_name = request.POST.get("printer", "").strip()
+    chosen = find_track(slug)
+    if chosen is None:
+        raise Http404("No such printer track")
+
+    entry = find_printer(slug, printer_name)
+    if entry is None:
+        messages.error(request, "That printer isn't on this chart.")
+        return redirect("printer_track", slug=slug)
+
+    state = challenge.standing(request.user)
+    if not state.ended:
+        messages.error(request, "Printers are claimed once the eight weeks are over.")
+        return redirect("printer_track", slug=slug)
+    if state.eliminated:
+        messages.error(request, challenge.elimination_reason(request.user))
+        return redirect("printer_track", slug=slug)
+    if not state.printer_unlocked:
+        messages.error(
+            request,
+            f"You need all {weeks.printer_hours()} printer hours to claim, "
+            f"and you have {state.printer_hours}.",
+        )
+        return redirect("printer_track", slug=slug)
+
+    # Resolved before the transaction: this calls out to HCA, which has no
+    # business happening while row locks are held. The claim still goes through
+    # if it fails — fulfillment resolves the primary address anyway.
+    try:
+        address_id = request.user.hackclub_profile.primary_address_id
+    except AddressUnavailable:
+        address_id = ""
+    if too_long(address_id, Order, "address_id"):
+        address_id = ""
+
+    cost = entry["pearls"]
+
+    with transaction.atomic():
+        if PrinterClaim.objects.select_for_update().filter(user=request.user).exists():
+            messages.error(request, "You've already claimed your printer.")
+            return redirect("printer_track", slug=slug)
+
+        profile = Profile.objects.select_for_update().get(user=request.user)
+        if profile.layers < cost:
+            messages.error(
+                request,
+                f"{entry['name']} costs {cost} pearls and you have {profile.layers}.",
+            )
+            return redirect("printer_track", slug=slug)
+
+        item = Item.objects.filter(printer_key=item_key(slug, entry["name"])).first()
+        if item is None:
+            # The tree and the generated rows have drifted, which is an
+            # operator problem and not something to charge anyone for.
+            messages.error(request, "That printer isn't set up for claiming yet. Ask in #atlantis-help.")
+            return redirect("printer_track", slug=slug)
+
+        profile.layers -= cost
+        # The claim fixes the track for good, whatever was picked before.
+        profile.printer_track = slug
+        profile.save(update_fields=["layers", "printer_track"])
+
+        order = Order.objects.create(
+            owner=request.user,
+            item=item,
+            quantity=1,
+            cost=cost,
+            address_id=address_id,
+            user_notes=f"{chosen['name']}: {entry['name']}"[:100],
+        )
+        PrinterClaim.objects.create(
+            user=request.user,
+            track_slug=slug,
+            printer_name=entry["name"],
+            pearls_spent=cost,
+            order=order,
+        )
+
+    record_audit(request, "claim_printer", target=f"{chosen['name']} {entry['name']}", metadata={
+        "track": slug,
+        "printer": entry["name"],
+        "pearls": cost,
+        "order_id": order.id,
+    })
+    messages.success(request, f"{entry['name']} claimed! It's with fulfillment now.")
+    return redirect("printer_track", slug=slug)
 
 @login_required
 def user_profile(request, user_id):

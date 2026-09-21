@@ -313,12 +313,22 @@ def metrics(request):
     ])
     t3_total_airtable_minutes = T3.objects.aggregate(t=Sum("airtable_time"))["t"] or 0
 
+    # What was paid is read off the decision rather than recomputed: an hour is
+    # worth one of three rates depending on the week it was recorded in, so
+    # minutes and a multiplier no longer determine the pearls. Rows written
+    # before that was true carry no figure, and for those the flat rate is
+    # still exactly what they paid.
     total_payout_minutes = 0
     total_layers_paid = 0
-    for payout_time, multiplier in T3.objects.filter(decision=T3.Decision.APPROVE).values_list("payout_time", "payout_multiplier"):
+    for payout_time, multiplier, paid in T3.objects.filter(
+        decision=T3.Decision.APPROVE
+    ).values_list("payout_time", "payout_multiplier", "payout_layers"):
         minutes = payout_time or 0
         total_payout_minutes += minutes
-        total_layers_paid += layers_for_minutes(minutes, multiplier or PAYOUT_MULTIPLIER_DEFAULT)
+        total_layers_paid += (
+            paid if paid is not None
+            else layers_for_minutes(minutes, multiplier or PAYOUT_MULTIPLIER_DEFAULT)
+        )
 
     reviews_stats = {
         "t1_total": t1_total,

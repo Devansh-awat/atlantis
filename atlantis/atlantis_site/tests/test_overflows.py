@@ -27,7 +27,7 @@ from ..views.helpers import INT_FIELD_MAX, field_max_length
 from .base import (
 	BaseTestCase, VALID_EDITOR_LINK, VALID_PRINTABLES_URL, grant_perms,
 	image_upload, make_lookout, make_project, make_user, message_texts,
-	stl_upload,
+	stl_upload, shop_items,
 )
 
 User = get_user_model()
@@ -178,23 +178,23 @@ class AdminItemFieldTests(BaseTestCase):
 		# cost is a PositiveIntegerField, so a negative one is a CHECK
 		# violation rather than a validation message.
 		response = self._create(cost="-5")
-		self.assertEqual(Item.objects.count(), 0)
+		self.assertEqual(shop_items().count(), 0)
 		self.assertTrue(any("negative" in m for m in message_texts(response)))
 
 	def test_cost_past_the_column_is_refused(self):
 		self._create(cost=str(INT_FIELD_MAX + 1))
-		self.assertEqual(Item.objects.count(), 0)
+		self.assertEqual(shop_items().count(), 0)
 
 	def test_stock_past_the_column_is_refused(self):
 		self._create(stock=str(INT_FIELD_MAX + 1))
-		self.assertEqual(Item.objects.count(), 0)
+		self.assertEqual(shop_items().count(), 0)
 
 	def test_over_long_text_fields_are_refused(self):
 		for field, key in (("name", "name"), ("description", "description"),
 						   ("category", "category")):
 			with self.subTest(field=field):
 				self._create(**{key: over(Item, field)})
-				self.assertEqual(Item.objects.count(), 0)
+				self.assertEqual(shop_items().count(), 0)
 
 	def test_edit_refuses_a_negative_cost_and_leaves_the_item_alone(self):
 		item = Item.objects.create(name="Filament", description="PLA", cost=10)

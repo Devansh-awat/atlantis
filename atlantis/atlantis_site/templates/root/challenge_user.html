@@ -1,0 +1,119 @@
+{% extends 'root/_base_root.html' %}
+
+{% block page_id %}admin-challenge-user-page{% endblock %}
+{% block title %}{{ name }} &middot; Streaks{% endblock %}
+
+{% block content %}
+<div class="content">
+    {% include "root/_messages_admin.html" %}
+
+    <p><a href="{% url 'challenge_dash' %}">&larr; all streaks</a></p>
+    <h1>{{ name }}</h1>
+
+    <p>
+        {% if standing.eliminated %}
+            <span class="pill pill-bad">out of the program</span>
+            Needs {{ standing.saver_hours_needed }} more saver hour(s) on
+            {{ standing.earliest_missed.label }} to get back in.
+        {% else %}
+            <span class="pill pill-good">in the program</span>
+        {% endif %}
+        &middot; {{ standing.printer_hours }} printer hours
+        &middot; {{ standing.prep_minutes }} prep minutes logged
+    </p>
+
+    <h3>Weeks</h3>
+    <div class="table-scroll">
+        <table class="users-table">
+            <thead>
+                <tr>
+                    <th>Week</th>
+                    <th>Logged</th>
+                    <th>Saved</th>
+                    <th>Credited</th>
+                    <th>Result</th>
+                    <th>Override</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for week in standing.weeks %}
+                    <tr>
+                        <td>{{ week.label }}{% if week.current %} <em>(live)</em>{% endif %}</td>
+                        <td>{{ week.tracked_display }}</td>
+                        <td>{{ week.saver_hours }}h</td>
+                        <td>{{ week.credited_display }}</td>
+                        <td>
+                            {% if week.missed %}<span class="pill pill-bad">missed</span>
+                            {% elif week.met %}<span class="pill pill-good">met</span>
+                            {% elif week.current %}<span class="pill pill-warn">{{ week.percent }}%</span>
+                            {% else %}not yet{% endif %}
+                        </td>
+                        <td>
+                            {% comment %}
+                            The override form is per row rather than one form
+                            with a week picker: the row already says which week
+                            it is, and picking the wrong one from a dropdown is
+                            the mistake worth designing out here.
+                            {% endcomment %}
+                            <form method="post" action="{% url 'override_week' target.id %}" class="inline-form">
+                                {% csrf_token %}
+                                <input type="hidden" name="week" value="{{ week.index }}">
+                                <select name="override" aria-label="Override week {{ week.index }}">
+                                    {% for value, label in overrides %}
+                                        <option value="{{ value }}" {% if week.override == value %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <input type="text" name="note" maxlength="200" placeholder="Why"
+                                       aria-label="Reason for overriding week {{ week.index }}">
+                                <button type="submit">Set</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <h3>Grant saver hours</h3>
+    <p class="muted">
+        Free hours on a week, charged to nobody. Enough of them on the earliest
+        missed week puts this person straight back in the program.
+    </p>
+    <form method="post" action="{% url 'grant_saver' target.id %}" class="inline-form">
+        {% csrf_token %}
+        <label>Week
+            <input type="number" name="week" min="1" max="{{ standing.weeks|length }}" required>
+        </label>
+        <label>Hours
+            <input type="number" name="hours" min="1" max="5" value="1" required>
+        </label>
+        <label>Why
+            <input type="text" name="note" maxlength="200" placeholder="Lapse outage, etc.">
+        </label>
+        <button type="submit">Grant</button>
+    </form>
+
+    <h3>Saver history</h3>
+    <div class="table-scroll">
+        <table class="users-table">
+            <thead>
+                <tr><th>When</th><th>Week</th><th>Source</th><th>Order</th><th>Granted by</th><th>Note</th></tr>
+            </thead>
+            <tbody>
+                {% for credit in credits %}
+                    <tr>
+                        <td>{{ credit.created_at|date:"Y-m-d H:i" }}</td>
+                        <td>{{ credit.week_index }}</td>
+                        <td>{{ credit.get_source_display }}</td>
+                        <td>{% if credit.order %}#{{ credit.order.id }}{% else %}none{% endif %}</td>
+                        <td>{{ credit.granted_by.username|default:"none" }}</td>
+                        <td>{{ credit.note }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="6">No savers on this account.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
