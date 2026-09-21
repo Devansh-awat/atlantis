@@ -27,26 +27,6 @@
             <h1 class="chart-heading">Pick your printer</h1>
         </header>
 
-        {% comment %}
-        The charts are a plan until the program is over, so this line is about
-        progress rather than price: how many of the hours are banked, and which
-        chart is currently the plan.
-        {% endcomment %}
-        <p class="chart-progress">
-            {% if claim %}
-                Claimed: <strong>{{ claim.printer_name }}</strong>.
-            {% else %}
-                <strong>{{ standing.printer_hours }}</strong> of {{ printer_hours_total }} printer hours banked.
-                {% if claim_open %}
-                    Pick a chart and claim your printer.
-                {% elif standing.eliminated %}
-                    You're out of the program: a printer needs every week.
-                {% else %}
-                    Nothing is spent until the eight weeks are over.
-                {% endif %}
-            {% endif %}
-        </p>
-
         <ul class="track-grid">
             {% for track in tracks %}
                 <li>
